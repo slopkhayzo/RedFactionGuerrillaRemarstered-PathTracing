@@ -12,7 +12,7 @@
 > kind of reverse-engineering by myself; I've tested a few wrecking crew levels and a couple single player saves
 > and so far spotted no major issues (on my machine ofc, if you have issues feel free to open an Issue) keep in mind the game will probably very often run out of memory.
 > This patch currently probably only works for the latest GOG and Steam versions of the game.
-> If you're interested and want more (human generated) info, I have a blog post [here](https://slop-blog.enkhayzomachines.net/posts/red-faction-guerrilla-physx-integration) :)
+> If you're interested and want more (human generated) info, I have a blog post [here](https://slop-blog.enkhayzomachines.net/posts/red-faction-guerrilla-path-tracing-mod) :)
 
 A mod for *Red Faction Guerrilla Re-Mars-tered* (GOG and Steam) that lights the game by path tracing, the way
 Cyberpunk 2077's RT Overdrive does: the game keeps drawing its own image (geometry, materials, decals, particles,
