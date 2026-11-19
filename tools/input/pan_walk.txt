@@ -1,0 +1,9 @@
+# Motion test (Test.InputScript, src/rfgrt/test/input_script.h): from the save's start, a slow pan right, a walk
+# forward, a faster pan back, so that the renderer's work over frames (the sun shadow's history: reprojection, its
+# depth test, the neighbourhood bound) is seen in motion. About 18 counts a degree at the save's mouse sensitivity
+# (the PhysX project's look test: 400 counts, about 22 degrees). Shots at 10 (still), 14 and 16 (panning), 21 and 22
+# (walking), 26 (panning back), 30 (still again).
+12.0 look 300 0 6.0
+19.0 key 63 down
+23.0 key 63 up
+24.0 look -600 0 3.0

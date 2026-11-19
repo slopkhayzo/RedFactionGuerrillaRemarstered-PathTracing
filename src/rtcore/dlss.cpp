@@ -1,0 +1,178 @@
+#include "dlss.h"
+
+#include <cstdarg>
+#include <cstdio>
+
+#if defined(RFGRT_DLSS)
+#include <nvsdk_ngx.h>
+#include <nvsdk_ngx_defs.h>
+#include <nvsdk_ngx_helpers.h>
+#include <nvsdk_ngx_helpers_dlssd_d3d.h>
+#include <nvsdk_ngx_params.h>
+#endif
+
+namespace rtcore::dlss {
+
+#if defined(RFGRT_DLSS)
+
+namespace {
+
+// NGX asks custom engines for a project id of their own (GUID-style).
+constexpr char kProjectId[] = "8d2f5b61-3c47-4e9a-b0d4-6a91c2e7f3b8";
+
+struct State {
+    bool initialized = false, available = false;
+    NVSDK_NGX_Parameter* parameters = nullptr;
+    NVSDK_NGX_Handle* feature = nullptr;
+    unsigned width = 0, height = 0;
+    bool told_eval_failure = false;
+    LogFn log = nullptr;
+} s;
+
+void logf(const char* fmt, ...) {
+    if (!s.log) return;
+    char line[512];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(line, sizeof(line), fmt, args);
+    va_end(args);
+    s.log(line);
+}
+
+void NVSDK_CONV ngx_log(const char* message, NVSDK_NGX_Logging_Level, NVSDK_NGX_Feature) {
+    if (!message || !s.log) return;
+    char line[512];
+    size_t n = 0;
+    for (const char* c = message; *c && n + 1 < sizeof(line); ++c)
+        if (*c != '\n' && *c != '\r') line[n++] = *c;
+    line[n] = 0;
+    logf("NGX: %s", line);
+}
+
+}  // namespace
+
+bool built() { return true; }
+
+bool initialize(ID3D12Device* device, const wchar_t* runtime_dir, const wchar_t* data_dir, LogFn log) {
+    if (s.initialized) return s.available;
+    s.initialized = true;
+    s.log = log;
+    const wchar_t* paths[] = {runtime_dir};
+    NVSDK_NGX_FeatureCommonInfo info{};
+    info.PathListInfo.Path = paths;
+    info.PathListInfo.Length = 1;
+    info.LoggingInfo.LoggingCallback = &ngx_log;
+    info.LoggingInfo.MinimumLoggingLevel = NVSDK_NGX_LOGGING_LEVEL_OFF;  // its errors still come back as results
+    info.LoggingInfo.DisableOtherLoggingSinks = true;
+    NVSDK_NGX_Result r = NVSDK_NGX_D3D12_Init_with_ProjectID(kProjectId, NVSDK_NGX_ENGINE_TYPE_CUSTOM, "0.1", data_dir, device,
+                                                             &info, NVSDK_NGX_Version_API);
+    if (NVSDK_NGX_FAILED(r)) {
+        logf("DLSS: NGX could not be initialized (0x%08X): Ray Reconstruction stays off, the GI's own denoiser runs",
+             static_cast<unsigned>(r));
+        return false;
+    }
+    r = NVSDK_NGX_D3D12_GetCapabilityParameters(&s.parameters);
+    if (NVSDK_NGX_FAILED(r) || !s.parameters) {
+        logf("DLSS: NGX's capabilities unavailable (0x%08X): Ray Reconstruction stays off", static_cast<unsigned>(r));
+        return false;
+    }
+    int available = 0, needs_driver = 0;
+    unsigned major = 0, minor = 0;
+    NVSDK_NGX_Parameter_GetI(s.parameters, NVSDK_NGX_Parameter_SuperSamplingDenoising_Available, &available);
+    NVSDK_NGX_Parameter_GetI(s.parameters, NVSDK_NGX_Parameter_SuperSamplingDenoising_NeedsUpdatedDriver, &needs_driver);
+    NVSDK_NGX_Parameter_GetUI(s.parameters, NVSDK_NGX_Parameter_SuperSamplingDenoising_MinDriverVersionMajor, &major);
+    NVSDK_NGX_Parameter_GetUI(s.parameters, NVSDK_NGX_Parameter_SuperSamplingDenoising_MinDriverVersionMinor, &minor);
+    if (!available) {
+        int init_result = 0;
+        NVSDK_NGX_Parameter_GetI(s.parameters, NVSDK_NGX_Parameter_SuperSamplingDenoising_FeatureInitResult, &init_result);
+        if (needs_driver)
+            logf("DLSS: Ray Reconstruction is not available (0x%08X, needs driver %u.%u): the GI's own denoiser runs",
+                 static_cast<unsigned>(init_result), major, minor);
+        else
+            logf("DLSS: Ray Reconstruction is not available (0x%08X): the GI's own denoiser runs", static_cast<unsigned>(init_result));
+        return false;
+    }
+    s.available = true;
+    logf("DLSS: Ray Reconstruction available (its runtime next to rfgrt_host.exe)");
+    return true;
+}
+
+bool evaluate(ID3D12GraphicsCommandList* list, const Inputs& in) {
+    if (!s.available || !list || !in.width || !in.height) return false;
+    if (!s.feature || s.width != in.width || s.height != in.height) {
+        if (s.feature) {
+            NVSDK_NGX_D3D12_ReleaseFeature(s.feature);  // the frames that used it are complete (new frame textures)
+            s.feature = nullptr;
+        }
+        NVSDK_NGX_DLSSD_Create_Params create{};
+        create.InDenoiseMode = NVSDK_NGX_DLSS_Denoise_Mode_DLUnified;
+        create.InRoughnessMode = NVSDK_NGX_DLSS_Roughness_Mode_Packed;
+        create.InUseHWDepth = NVSDK_NGX_DLSS_Depth_Type_Linear;
+        create.InWidth = in.width;
+        create.InHeight = in.height;
+        create.InTargetWidth = in.width;
+        create.InTargetHeight = in.height;
+        create.InPerfQualityValue = NVSDK_NGX_PerfQuality_Value_DLAA;
+        create.InFeatureCreateFlags =
+            NVSDK_NGX_DLSS_Feature_Flags_IsHDR | NVSDK_NGX_DLSS_Feature_Flags_MVLowRes | NVSDK_NGX_DLSS_Feature_Flags_AutoExposure;
+        create.InEnableOutputSubrects = false;
+        const NVSDK_NGX_Result r = NGX_D3D12_CREATE_DLSSD_EXT(list, 1, 1, &s.feature, s.parameters, &create);
+        if (NVSDK_NGX_FAILED(r) || !s.feature) {
+            logf("DLSS: Ray Reconstruction could not be created at %ux%u (0x%08X): the GI's own denoiser runs", in.width, in.height,
+                 static_cast<unsigned>(r));
+            s.feature = nullptr;
+            s.available = false;
+            return false;
+        }
+        s.width = in.width;
+        s.height = in.height;
+        logf("DLSS: Ray Reconstruction created at %ux%u (DLAA; the irradiance alone, white albedo)", in.width, in.height);
+        return false;  // evaluated from the next frame on
+    }
+    NVSDK_NGX_D3D12_DLSSD_Eval_Params eval{};
+    eval.pInColor = in.color;
+    eval.pInOutput = in.output;
+    eval.pInDepth = in.depth;
+    eval.pInMotionVectors = in.motion;
+    eval.pInDiffuseAlbedo = in.diffuse_albedo;
+    eval.pInSpecularAlbedo = in.specular_albedo;
+    eval.pInNormals = in.normal_roughness;
+    eval.pInRoughness = in.normal_roughness;
+    eval.InRenderSubrectDimensions.Width = in.width;
+    eval.InRenderSubrectDimensions.Height = in.height;
+    eval.InReset = in.reset ? 1 : 0;
+    eval.InMVScaleX = 1.0f;
+    eval.InMVScaleY = 1.0f;
+    eval.pInWorldToViewMatrix = const_cast<float*>(in.world_to_view);
+    eval.pInViewToClipMatrix = const_cast<float*>(in.view_to_clip);
+    eval.InFrameTimeDeltaInMsec = in.frame_ms;
+    const NVSDK_NGX_Result r = NGX_D3D12_EVALUATE_DLSSD_EXT(list, s.feature, s.parameters, &eval);
+    if (NVSDK_NGX_FAILED(r)) {
+        if (!s.told_eval_failure) {
+            s.told_eval_failure = true;
+            logf("DLSS: Ray Reconstruction's evaluation failed (0x%08X)", static_cast<unsigned>(r));
+        }
+        return false;
+    }
+    return true;
+}
+
+void shutdown() {
+    if (s.feature) NVSDK_NGX_D3D12_ReleaseFeature(s.feature);
+    s.feature = nullptr;
+    if (s.parameters) NVSDK_NGX_D3D12_DestroyParameters(s.parameters);
+    s.parameters = nullptr;
+    if (s.initialized && s.available) NVSDK_NGX_D3D12_Shutdown1(nullptr);
+    s.available = false;
+}
+
+#else
+
+bool built() { return false; }
+bool initialize(ID3D12Device*, const wchar_t*, const wchar_t*, LogFn) { return false; }
+bool evaluate(ID3D12GraphicsCommandList*, const Inputs&) { return false; }
+void shutdown() {}
+
+#endif
+
+}  // namespace rtcore::dlss

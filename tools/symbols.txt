@@ -1,0 +1,258 @@
+# Symbols exported to src/rfgrt/game/rfg_symbols.generated.h by tools/gen_symbols.py, with their addresses in the
+# GOG build (from its PDB) and in the Steam build (from tools/steam_map.json), and the struct layouts the plugin reads.
+# fn NAME [@RVA] [as ALIAS]      function (RVA only when the name is overloaded)
+# var NAME [as ALIAS]            global variable
+# field TYPE::MEMBER [as ALIAS]  offset of a struct member (inherited members included)
+# size TYPE [as ALIAS]           size of a struct
+# enum NAME                      enum name table
+# Code never hard-codes an address or a layout: a 64-bit rfg.exe will have its own of both.
+
+# main loop and game state
+fn rfg_do_frame
+fn gameseq_get_state
+enum game_state
+
+# test automation and save safety (as in the PhysX project)
+fn main_menu_handle_selection
+fn hud_ui_save_load_selection_made
+fn keen::SaveData::SaveDataProviderWin32Steam::writeFileToSteamStorage
+fn game_save_clear_load_directory_cache
+fn keen::input::setControllerPlayerId @0087AE60
+fn player_get_local_player
+# Test.TimeOfDay: game_clock_set_time(hour, minute, second), game_clock_freeze_ingame_time(freeze)
+fn game_clock_set_time
+fn game_clock_freeze_ingame_time
+var Keen_input_system
+var Main_menu_auto_catch_done
+var Num_saved_games
+var Update_list_uisave
+var Directory_cache_loaded
+var Main_menu_loading_options
+var Main_menu_waiting_for_options_load
+var ExitHandbook
+# Test.WreckingCrew: main menu -> Wrecking Crew -> a map -> the match, without input (as the PhysX project's replays
+# start one: main_menu_handle_selection(2), the menu's data loaded, the options' map, wrecking_crew_match_begin())
+fn wrecking_crew_match_begin
+fn wrecking_crew_get_map_file_name
+var Wrecking_crew_options
+var Wrecking_crew_num_maps
+var Menu_wrecking_crew_info
+field wrecking_crew_options::mode as WcOptions_mode
+field wrecking_crew_options::map_index as WcOptions_map_index
+field wc_shell_info::state as WcShellInfo_state
+
+# Test.InputScript: scripted mouse and keyboard input (as the PhysX project's record harness feeds it)
+fn controls_poll
+fn input_poll
+var Cached_input_states
+var Next_cached_input_state
+size cached_input_state as CachedInput_size
+field cached_input_state::mouse as CachedInput_mouse
+field cached_input_state::keyboard as CachedInput_keyboard
+field cached_mouse_state::relative_move_x as MouseState_moveX
+field cached_mouse_state::relative_move_y as MouseState_moveY
+field cached_mouse_state::buttons as MouseState_buttons
+field keen::InputSystem::controllerInfos as InputSystem_controllerInfos
+size keen::ControllerInfo as ControllerInfo_size
+field keen::ControllerInfo::controllerClass as ControllerInfo_controllerClass
+field human::hflags as human_hflags
+# focus: unattended runs keep playing when the window is not in front (else GS_QUICK_PAUSE)
+fn os_foreground
+var Os_app_active
+
+# the graphics system and the frame (keen layer)
+fn keen::graphics::endFrame
+fn keen::graphics::endCommandBuffer
+fn keen::GraphicsCommandWriter::invalidateState
+var g_game_options_graphicsSystem
+field keen::GraphicsSystem::pDevice as GraphicsSystem_pDevice
+field keen::GraphicsSystem::pImmediateContext as GraphicsSystem_pImmediateContext
+field keen::GraphicsSystem::immediateCommandBuffer as GraphicsSystem_immediateCommandBuffer
+field keen::GraphicsSystem::pCurrentSwapChain as GraphicsSystem_pCurrentSwapChain
+field keen::RenderSwapChain::pSwapChain as RenderSwapChain_pSwapChain
+
+# the scene renderer: the frame's passes and ClbTexture (research/docs/01 sections 3-4)
+fn rl_scene_renderer::render
+fn rl_scene_renderer::clb_render
+fn rl_scene_renderer::render_shadow_pass
+fn rl_scene_renderer::create_render_textures
+fn rl_scene_renderer::set_shadow_states
+field rl_renderer::m_pCommandWriter as Renderer_commandWriter
+field rl_renderer::m_commonFragmentData as Renderer_commonFragmentData
+# the fog the shaders get: g_commonVertexConstants.fogDistance (byte 208 of it)
+field rl_renderer::m_commonVertexData as Renderer_commonVertexData
+field rl_scene::m_ambient_color as Scene_ambientColor
+field rl_scene::m_back_ambient_color as Scene_backAmbientColor
+fn renderSsaoEffect
+var Current_scene_renderer
+field rl_scene_renderer::m_main_scene_target_width as SceneRenderer_mainWidth
+field rl_scene_renderer::m_main_scene_target_height as SceneRenderer_mainHeight
+field rl_scene_renderer::m_pMainSceneDepthTexture as SceneRenderer_mainDepthTexture
+field rl_scene_renderer::m_pMainSceneDepthTarget as SceneRenderer_mainDepthTarget
+field rl_scene_renderer::m_clb_width as SceneRenderer_clbWidth
+field rl_scene_renderer::m_clb_height as SceneRenderer_clbHeight
+field rl_scene_renderer::m_pClbTexture as SceneRenderer_clbTexture
+field rl_scene_renderer::m_pClbTarget as SceneRenderer_clbTarget
+field keen::TextureData::pTexture as TextureData_pTexture
+field keen::TextureData::pShaderView as TextureData_pShaderView
+field keen::TextureData::d3dFormat as TextureData_d3dFormat
+field keen::RenderTarget::renderTargetViews as RenderTarget_renderTargetViews
+field keen::RenderTarget::pDepthBufferView as RenderTarget_pDepthBufferView
+field keen::RenderTarget::width as RenderTarget_width
+field keen::RenderTarget::height as RenderTarget_height
+
+# geometry: every mesh is created through initializeRenderGeometry (research/docs/01 section 5)
+fn keen::graphics::initializeRenderGeometry
+# KAIKO's own shaders (the terrain's heightmesh_*.vso, ...) are packed into rfg.exe; Telemetry.DumpShaders saves them
+fn keen::graphics::createVertexShaderFromFile @0086F420 as keen__graphics__createVertexShaderFromFile
+fn keen::graphics::createFragmentShaderFromFile @0086F3D0 as keen__graphics__createFragmentShaderFromFile
+size keen::RenderGeometry as RenderGeometry_size
+field keen::RenderGeometry::pVertexFormat as RenderGeometry_pVertexFormat
+field keen::RenderGeometry::pVertexBuffer as RenderGeometry_pVertexBuffer
+field keen::RenderGeometry::vertexCount as RenderGeometry_vertexCount
+field keen::RenderGeometry::pIndexBuffer as RenderGeometry_pIndexBuffer
+field keen::RenderGeometry::indexCount as RenderGeometry_indexCount
+field keen::RenderGeometry::indexFormat as RenderGeometry_indexFormat
+field keen::RenderGeometry::primitiveTopology as RenderGeometry_primitiveTopology
+field keen::RenderGeometry::pDebugName as RenderGeometry_pDebugName
+field keen::VertexFormat::attributes as VertexFormat_attributes
+field keen::VertexFormat::attributeOffsets as VertexFormat_attributeOffsets
+field keen::VertexFormat::attributeCount as VertexFormat_attributeCount
+field keen::VertexFormat::streamStride as VertexFormat_streamStride
+size keen::VertexAttributeDescription as VertexAttributeDescription_size
+# what a mesh is made from, read while initializeRenderGeometry runs (the scene mirror decodes it)
+fn keen::graphics::freeRenderGeometry
+field keen::RenderGeometry::pSkinGeometry as RenderGeometry_pSkinGeometry
+field keen::RenderGeometryDescription::pVertexFormat as GeometryDesc_pVertexFormat
+field keen::RenderGeometryDescription::vertexCount as GeometryDesc_vertexCount
+field keen::RenderGeometryDescription::indexCount as GeometryDesc_indexCount
+field keen::RenderGeometryDescription::primitiveType as GeometryDesc_primitiveType
+field keen::RenderGeometryDescription::indexFormat as GeometryDesc_indexFormat
+field keen::RenderGeometryDescription::streamIndex as GeometryDesc_streamIndex
+field keen::RenderGeometryInitializationData::pVertexData as GeometryInit_pVertexData
+field keen::RenderGeometryInitializationData::pIndexData as GeometryInit_pIndexData
+field keen::RenderGeometryInitializationData::pSkinningData as GeometryInit_pSkinningData
+enum keen::PrimitiveType
+enum keen::IndexFormat
+# rl_mesh holds its RenderGeometry and its submesh table (rl_mesh_instance draws one submesh)
+field rl_mesh::m_geometry as Mesh_geometry
+field rl_mesh::m_data_set as Mesh_dataSet
+field rl_mesh::m_data as Mesh_data
+field rl_mesh_data_runtime::num_sub_meshes as MeshData_numSubMeshes
+field rl_mesh_data_runtime::sub_meshes as MeshData_subMeshes
+size rl_submesh_data as Submesh_size
+field rl_submesh_data::num_render_blocks as Submesh_numRenderBlocks
+field rl_submesh_data::offset_transform as Submesh_offsetTransform
+field rl_submesh_data::render_blocks as Submesh_renderBlocks
+size rl_render_block as RenderBlock_size
+field rl_render_block::material_map_idx as RenderBlock_materialMapIdx
+field rl_render_block::start_index as RenderBlock_startIndex
+field rl_render_block::num_indices as RenderBlock_numIndices
+field rl_render_block::minimum_index as RenderBlock_minIndex
+field rl_render_block::maximum_index as RenderBlock_maxIndex
+# initializeRenderGeometry's callers (research/docs/01 section 5)
+fn rl_mesh::init @00111960 as rl_mesh__init
+fn rl_destroyable_model_instance::compile_cache_data
+fn rl_morph_container::create_render_data
+fn keen::MaterialMesh::create
+fn rl_particle_renderer::create_buffers
+fn rl_star_field::initialize
+
+# render instances (phase 2b): the scene's registry, the classes the snapshot knows, and what it reads per frame
+fn rl_scene::add_renderable_instance
+fn rl_scene::remove_renderable_instance
+fn matrix::set @001756E0 as matrix__set_angles
+var rl_mesh::ms_class_factory_info as ClassInfo_mesh
+var rl_mesh_instance::ms_class_factory_info as ClassInfo_meshInstance
+var rl_skin_instance::ms_class_factory_info as ClassInfo_skinInstance
+field rl_skin_instance::m_bone_matrices_p as SkinInstance_boneMatrices
+field rl_skin_instance::m_num_bones_matrices as SkinInstance_numBones
+var rl_skirt_mesh_instance::ms_class_factory_info as ClassInfo_skirtMeshInstance
+var rl_compound_mesh_instance::ms_class_factory_info as ClassInfo_compoundMeshInstance
+var rl_destroyable_model_instance::ms_class_factory_info as ClassInfo_destroyableModelInstance
+var rl_height_mesh_instance::ms_class_factory_info as ClassInfo_heightMeshInstance
+var rl_clone_mesh_instance::ms_class_factory_info as ClassInfo_cloneMeshInstance
+var rl_deformable_mesh_instance::ms_class_factory_info as ClassInfo_deformableMeshInstance
+var rl_low_lod_mesh_instance::ms_class_factory_info as ClassInfo_lowLodMeshInstance
+var rl_landmark_lod_mesh_instance::ms_class_factory_info as ClassInfo_landmarkLodMeshInstance
+var rl_corona_instance::ms_class_factory_info as ClassInfo_coronaInstance
+var rl_planar_decal::ms_class_factory_info as ClassInfo_planarDecal
+var rl_renderable_particles_instance::ms_class_factory_info as ClassInfo_particlesInstance
+var rl_fog_volume::ms_class_factory_info as ClassInfo_fogVolume
+field rl_class_factory_info::m_class_id as ClassInfo_classId
+field rl_base_object::m_leaf_class_id as BaseObject_leafClassId
+field rl_3d_entity::m_world_matrix as Entity_worldMatrix
+field rl_scene_entity::m_flags as SceneEntity_flags
+field rl_scene_entity::m_scene_p as SceneEntity_scene
+field rl_scene_entity::m_pass_flags as SceneEntity_passFlags
+enum rl_scene_entity::flags
+enum rl_renderable_instance::pass_flags
+field rl_renderable_instance::m_opacity as Instance_opacity
+field rl_renderable_instance::m_renderable_p as Instance_renderable
+field rl_mesh_instance::m_submesh_index as MeshInstance_submeshIndex
+field rl_height_mesh_instance::m_sub_mesh_index as HeightMesh_subMeshIndex
+field rl_height_mesh_instance::m_target_position as HeightMesh_targetPosition
+field rl_renderable_instance::m_instance_parameters as Instance_parameters
+field rl_compound_mesh_instance::m_sub_instances as Compound_subInstances
+field rl_compound_mesh_instance::m_num_sub_instances as Compound_numSubInstances
+size rl_sub_instance as SubInstance_size
+field rl_sub_instance::m_transform as SubInstance_transform
+field rl_sub_instance::m_submesh_id as SubInstance_submeshId
+field rl_sub_instance::m_is_active as SubInstance_flags
+# glass lets rays through (the core's tlas.cpp): an instance's material map holds material handles;
+# resolve_material_handle gives the rl_material, whose data's mat_flags bit 0 is rl_material::get_is_transparent
+field rl_mesh_instance::m_mat_map as MeshInstance_matMap
+field rl_compound_mesh_instance::m_mat_map as Compound_matMap
+field rl_material_map::m_data as MaterialMap_data
+field rl_material_map_data_runtime::materials as MaterialMapData_materials
+field rl_material_map_data_runtime::num_materials as MaterialMapData_num
+fn resolve_material_handle @000E8ED0
+field rl_material::m_data as Material_data
+field rl_material_data::mat_flags as MaterialData_flags
+# translucent glass (rfg-eosglass, not flagged transparent): its materials by their shader's handle, which the shader
+# library gives for the name (rl_singleton<rl_shader_library>::get_instance()->lookup("rfg-eosglass"))
+field rl_material_data::shader_handle as MaterialData_shader
+# the materials' textures for the rays' hits (mirror/textures.cpp): a material's texture by its sampler's name
+# (bool rl_material::get_texture_data(int* out, const char* name): the shader library's TMU index of the name), the
+# texture's device object (get_dev_texture(void**, uint): bitmap manager or tracker pool; its D3D11 view at +0x18, as
+# rl_renderer::set_texture binds it); a material's constants by name (bool get_constant_data(float* out, const char*
+# name, int floats), which copies from before the constants for a name its shader lacks: get_constant_loc(const char*)
+# first, -1 for those)
+fn rl_material::get_texture_data @00111170 as Material_getTextureDataByName
+fn get_dev_texture
+fn rl_material::get_constant_data @000E8CF0 as Material_getConstantDataByName
+fn rl_material::get_constant_loc @000E8E20 as Material_getConstantLocByName
+fn rl_singleton<rl_shader_library>::get_instance as ShaderLibrary_instance
+fn rl_shader_library::lookup @001185D0 as ShaderLibrary_lookup
+field rl_scene::m_render_offset as Scene_renderOffset
+# the sun: the scene's largest light (game_render_get_TOD_light)
+field rl_scene::m_largest_light_p as Scene_largestLight
+field rl_scene::m_largest_light_default_p as Scene_largestLightDefault
+field rl_light::m_light_type as Light_type
+field rl_light::m_color as Light_color
+field rl_light::m_light_direction as Light_direction
+field rl_camera::m_projection_transform as Camera_projection
+field rl_camera::m_view_transform as Camera_view
+field rl_renderer::m_state_p as Renderer_state
+field rl_state_manager::m_world_view_transform as State_worldView
+field rl_state_manager::m_projection_transform as State_projection
+field rl_camera::m_near_clip as Camera_nearClip
+field rl_camera::m_far_clip as Camera_farClip
+field rl_camera::m_fov as Camera_fov
+# the main scene's depth range: the landmark LOD layer keeps [1 - this, 1] (rl_terrain_renderer::render_landmarks)
+var RL_reserved_landmark_depth_range
+
+# lighting
+fn game_render_get_TOD_light
+# the main light's colour reaches the light passes times this (rl_renderer::set_light into
+# rl_light::fillLightingFragmentShaderData); the other lights' go as they are
+var g_mainLightColorScale
+# the dynamic lights (render/lights.h): the scene renderer's visible lights, which render_lighting_passes draws one
+# additive pass each (set_light, then set_shadow_states binds ClbTexture at t15)
+fn rl_renderer::set_light
+fn rl_scene_renderer::render_lighting_passes
+field rl_scene_renderer::m_visible_lights as SceneRenderer_visibleLights
+field pool_list<rl_light *>::elt as LightList_data
+field pool_list<rl_light *>::num as LightList_count
+field rl_light::m_attenuation_end as Light_attenuationEnd
+field rl_light::m_world_matrix as Light_worldMatrix

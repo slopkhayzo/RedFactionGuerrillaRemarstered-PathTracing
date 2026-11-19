@@ -1,0 +1,12 @@
+# Dynamic lights test (Test.InputScript, src/rfgrt/test/input_script.h): the save's night scene has no local light, so
+# the player makes some: weapon slot 2 (key "2": keen ids are the virtual key minus 17 for digits, minus 24 for
+# letters; s_buttonIdKeyMap in rfg.exe holds the others), then bursts of fire, aimed a little down at the ground and the
+# buildings, so that muzzle flashes (and what they hit) light the scene. Shots at 10 (still), 15, 16, 22, 23 (firing).
+12.0 key 33 down
+12.2 key 33 up
+13.0 look 0 150 1.0
+14.5 mouse 0 down
+17.5 mouse 0 up
+18.5 look 400 0 1.0
+21.0 mouse 0 down
+24.5 mouse 0 up

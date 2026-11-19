@@ -1,0 +1,8 @@
+# Fog look-around (Test.InputScript, src/rfgrt/test/input_script.h): from the save's start, the camera turned a full
+# circle in four quarter turns (about 18 counts a degree at the save's mouse sensitivity: 1620 a quarter), each over
+# 2 seconds, still in between, so that one view faces the sun whatever the hour. Shots at 10 (the start), 15, 20, 25
+# (each quarter turn, the fog's history settled for 2 seconds) and 30 (back at the start).
+11.0 look 1620 0 2.0
+16.0 look 1620 0 2.0
+21.0 look 1620 0 2.0
+26.0 look 1620 0 2.0

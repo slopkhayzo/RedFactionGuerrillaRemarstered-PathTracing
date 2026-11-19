@@ -1,0 +1,13 @@
+# Wrecking Crew look-around (Test.InputScript, src/rfgrt/test/input_script.h; with Test.WreckingCrew): Return at 1 s
+# closes the match's "how to play" screen (it waits for Continue), Return at 3 s starts the turn (as the PhysX
+# project's look_and_fire.txt), then the camera turned a full circle in four quarter
+# turns (about 18 counts a degree: 1620 a quarter), each over 2 seconds, still in between. Shots at 10 (the start), 15,
+# 20, 25 (each quarter turn, the histories settled for 2 seconds) and 30 (back at the start).
+1.0 key 16 down
+1.2 key 16 up
+3.0 key 16 down
+3.2 key 16 up
+11.0 look 1620 0 2.0
+16.0 look 1620 0 2.0
+21.0 look 1620 0 2.0
+26.0 look 1620 0 2.0

@@ -1,0 +1,7 @@
+# Wrecking Crew, a still view (Test.InputScript; with Test.WreckingCrew): Return at 1 s closes the match's "how to play"
+# screen, Return at 3 s starts the turn (as the PhysX project's look_and_fire.txt); the camera stays as the match
+# placed it, for A/B shots of one view (the round's countdown is gone by 8 s).
+1.0 key 16 down
+1.2 key 16 up
+3.0 key 16 down
+3.2 key 16 up

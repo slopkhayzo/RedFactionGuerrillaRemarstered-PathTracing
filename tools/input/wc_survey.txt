@@ -1,0 +1,7 @@
+# Wrecking Crew survey (Test.InputScript; with Test.WreckingCrew): Return at 1 s closes the match's "how to play"
+# screen, Return at 3 s starts the turn (as the PhysX project's look_and_fire.txt), then the camera turned a quarter (as fog_look.txt's turns) at 6 s. Shots at 5 (the start) and 10 (turned).
+1.0 key 16 down
+1.2 key 16 up
+3.0 key 16 down
+3.2 key 16 up
+6.0 look 1620 0 2.0

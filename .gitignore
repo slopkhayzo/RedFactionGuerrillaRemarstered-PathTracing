@@ -1,0 +1,21 @@
+# Build outputs
+/build-x86/
+/build-x64/
+/dist/
+
+# Local data: the private game copy (tools\sandbox.ps1: hard links into the installed game), game sessions,
+# recordings of play and the test queue's job files
+/game/
+/runs/
+/recordings/
+/tools/jobs/
+
+# Research notes, analysis scripts and the data they extract from the game (kept local)
+/research/
+
+__pycache__/
+*.pyc
+
+# Third-party binaries: downloaded, not kept here (third_party/README.md)
+/third_party/ultimate-asi-loader/dinput8.dll
+/third_party/dlss/
