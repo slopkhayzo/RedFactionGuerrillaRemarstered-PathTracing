@@ -27,7 +27,7 @@
 namespace rfgrt_ipc {
 
 constexpr uint32_t kMagic = 0x54524652;  // "RFRT"
-constexpr uint32_t kVersion = 22;
+constexpr uint32_t kVersion = 23;
 constexpr uint32_t kMaxLightMasks = 16;  // shadow masks of dynamic lights a frame
 
 enum HostState : int32_t {
@@ -146,6 +146,12 @@ struct Block {
     // shader, no material map), where neither the game's colour nor the radiance cache has it
     float terrain_albedo[3];
     int32_t window_tint;  // GI.WindowTint: the clear glass tints the sun's light through it (sun_tint.hlsl)
+    // Host.Dred: the core's device keeps Direct3D 12's removed-device data (the command lists'
+    // progress, the page fault's address), logged if the device is lost
+    int32_t dred;
+    // Test.KillHostAtSeconds with the core in the game's process: 1 asks the core to remove its
+    // device (ID3D12Device5::RemoveDevice) as a lost device would be; the core sets 2 once it has
+    volatile int32_t test_remove_device;
 
     volatile int32_t host_state;  // HostState
     volatile int32_t stop;        // set by the plugin: the core stops submitting and exits

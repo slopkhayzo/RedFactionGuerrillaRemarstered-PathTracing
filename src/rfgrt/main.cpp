@@ -110,6 +110,7 @@ void init() {
     link.frosted_glass = cfg.gi_frosted_glass;
     link.window_tint = cfg.gi_window_tint && cfg.host_mode == rfgrt_ipc::kModeSunShadows;
     link.tlas_fast_trace = cfg.tlas_fast_trace;
+    link.dred = cfg.host_dred;
     if (cfg.gi_terrain_albedo.size() >= 3)
         for (int i = 0; i < 3; ++i)
             link.terrain_albedo[i] = float(cfg.gi_terrain_albedo[size_t(i)] < 0.0 ? 0.0 : cfg.gi_terrain_albedo[size_t(i)] > 1.0 ? 1.0

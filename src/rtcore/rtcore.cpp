@@ -83,6 +83,134 @@ void release(T*& p) {
     p = nullptr;
 }
 
+// A lost device. A fence of a removed device reads UINT64_MAX, and every call on it fails or does
+// nothing. The core used to go on regardless: in a campaign session on the 64-bit port (OpenRFG64, the core in the
+// game's process, 2026-11-22) the device was lost after a 4 s hang, and the core kept recording a frame every 5 ms
+// into it, its allocations all failing, no frame answered, while the game's process grew by 11 GB in two minutes, to
+// unplayable paging. Now it logs why and stops (rfgrt_host.exe then exits); the plugin takes the game back to its own
+// lighting (Link::monitor_main).
+const char* removed_reason_text(HRESULT hr) {
+    switch (hr) {
+        case DXGI_ERROR_DEVICE_HUNG: return "the GPU hung on one of its commands (the driver reset it)";
+        case DXGI_ERROR_DEVICE_RESET: return "the device was reset (a badly formed command)";
+        case DXGI_ERROR_DEVICE_REMOVED: return "the device was removed (a page fault, or the driver went away)";
+        case DXGI_ERROR_DRIVER_INTERNAL_ERROR: return "the driver failed";
+        case DXGI_ERROR_INVALID_CALL: return "an invalid call";
+        default: return "no reason given";
+    }
+}
+
+const char* breadcrumb_op_name(D3D12_AUTO_BREADCRUMB_OP op) {
+    switch (op) {
+        case D3D12_AUTO_BREADCRUMB_OP_SETMARKER: return "SetMarker";
+        case D3D12_AUTO_BREADCRUMB_OP_BEGINEVENT: return "BeginEvent";
+        case D3D12_AUTO_BREADCRUMB_OP_ENDEVENT: return "EndEvent";
+        case D3D12_AUTO_BREADCRUMB_OP_DISPATCH: return "Dispatch";
+        case D3D12_AUTO_BREADCRUMB_OP_COPYBUFFERREGION: return "CopyBufferRegion";
+        case D3D12_AUTO_BREADCRUMB_OP_COPYTEXTUREREGION: return "CopyTextureRegion";
+        case D3D12_AUTO_BREADCRUMB_OP_COPYRESOURCE: return "CopyResource";
+        case D3D12_AUTO_BREADCRUMB_OP_CLEARUNORDEREDACCESSVIEW: return "ClearUnorderedAccessView";
+        case D3D12_AUTO_BREADCRUMB_OP_RESOURCEBARRIER: return "ResourceBarrier";
+        case D3D12_AUTO_BREADCRUMB_OP_RESOLVEQUERYDATA: return "ResolveQueryData";
+        case D3D12_AUTO_BREADCRUMB_OP_BEGINSUBMISSION: return "BeginSubmission";
+        case D3D12_AUTO_BREADCRUMB_OP_ENDSUBMISSION: return "EndSubmission";
+        case D3D12_AUTO_BREADCRUMB_OP_WRITEBUFFERIMMEDIATE: return "WriteBufferImmediate";
+        case D3D12_AUTO_BREADCRUMB_OP_BUILDRAYTRACINGACCELERATIONSTRUCTURE: return "BuildRaytracingAccelerationStructure";
+        case D3D12_AUTO_BREADCRUMB_OP_EMITRAYTRACINGACCELERATIONSTRUCTUREPOSTBUILDINFO:
+            return "EmitRaytracingAccelerationStructurePostbuildInfo";
+        case D3D12_AUTO_BREADCRUMB_OP_COPYRAYTRACINGACCELERATIONSTRUCTURE: return "CopyRaytracingAccelerationStructure";
+        case D3D12_AUTO_BREADCRUMB_OP_DISPATCHRAYS: return "DispatchRays";
+        case D3D12_AUTO_BREADCRUMB_OP_EXECUTEMETACOMMAND: return "ExecuteMetaCommand";
+        case D3D12_AUTO_BREADCRUMB_OP_EXECUTEEXTENSIONCOMMAND: return "ExecuteExtensionCommand";
+        default: return nullptr;
+    }
+}
+
+std::string narrow_name(const char* a, const wchar_t* w) {
+    if (a && *a) return a;
+    if (w && *w) {
+        char s[128];
+        WideCharToMultiByte(CP_UTF8, 0, w, -1, s, sizeof(s), nullptr, nullptr);
+        s[sizeof(s) - 1] = 0;
+        return s;
+    }
+    return "(unnamed)";
+}
+
+// What Direct3D 12 kept of the lost device (Host.Dred): each command list the GPU had not finished, with the
+// operations around the last one it completed, and the allocations at the page fault's address.
+void log_removed_device_data(ID3D12Device* dev) {
+    ID3D12DeviceRemovedExtendedData* dred = nullptr;
+    if (FAILED(dev->QueryInterface(IID_PPV_ARGS(&dred)))) {
+        logf("lost device: no removed-device data (Host.Dred off, or this Windows has none)");
+        return;
+    }
+    D3D12_DRED_AUTO_BREADCRUMBS_OUTPUT crumbs{};
+    if (SUCCEEDED(dred->GetAutoBreadcrumbsOutput(&crumbs))) {
+        int lists = 0, unfinished = 0;
+        for (const D3D12_AUTO_BREADCRUMB_NODE* node = crumbs.pHeadAutoBreadcrumbNode; node; node = node->pNext) {
+            ++lists;
+            const UINT done = node->pLastBreadcrumbValue ? *node->pLastBreadcrumbValue : 0;
+            if (done >= node->BreadcrumbCount) continue;  // finished
+            if (++unfinished > 8) continue;
+            const std::string queue_name = narrow_name(node->pCommandQueueDebugNameA, node->pCommandQueueDebugNameW);
+            const std::string list_name = narrow_name(node->pCommandListDebugNameA, node->pCommandListDebugNameW);
+            std::string ops;
+            const UINT from = done > 6 ? done - 6 : 0;
+            const UINT to = done + 4 < node->BreadcrumbCount ? done + 4 : node->BreadcrumbCount;
+            for (UINT i = from; i < to; ++i) {
+                const char* op = breadcrumb_op_name(node->pCommandHistory[i]);
+                char item[96];
+                if (op)
+                    snprintf(item, sizeof(item), "%s%s%s", i == from ? "" : ", ", i == done ? ">>" : "", op);
+                else
+                    snprintf(item, sizeof(item), "%s%sop %d", i == from ? "" : ", ", i == done ? ">>" : "",
+                             static_cast<int>(node->pCommandHistory[i]));
+                ops += item;
+            }
+            logf("lost device: queue \"%s\", command list \"%s\": %u of its %u operations done; around the first not done "
+                 "(>>): %s",
+                 queue_name.c_str(), list_name.c_str(), done, node->BreadcrumbCount, ops.c_str());
+        }
+        logf("lost device: %d command lists in the breadcrumbs, %d of them not finished", lists, unfinished);
+    } else {
+        logf("lost device: no breadcrumbs");
+    }
+    D3D12_DRED_PAGE_FAULT_OUTPUT fault{};
+    if (SUCCEEDED(dred->GetPageFaultAllocationOutput(&fault))) {
+        if (fault.PageFaultVA == 0) {
+            logf("lost device: no page fault");
+        } else {
+            logf("lost device: page fault at GPU address 0x%llX", static_cast<unsigned long long>(fault.PageFaultVA));
+            int n = 0;
+            for (const D3D12_DRED_ALLOCATION_NODE* a = fault.pHeadExistingAllocationNode; a && n < 8; a = a->pNext, ++n)
+                logf("lost device:   there now: \"%s\" (allocation type %d)", narrow_name(a->ObjectNameA, a->ObjectNameW).c_str(),
+                     static_cast<int>(a->AllocationType));
+            n = 0;
+            for (const D3D12_DRED_ALLOCATION_NODE* a = fault.pHeadRecentFreedAllocationNode; a && n < 8; a = a->pNext, ++n)
+                logf("lost device:   freed there recently: \"%s\" (allocation type %d)",
+                     narrow_name(a->ObjectNameA, a->ObjectNameW).c_str(), static_cast<int>(a->AllocationType));
+        }
+    }
+    dred->Release();
+}
+
+// True once the device is gone (logged once, with the reason and the removed-device data, and the core marked failed).
+bool device_lost(ID3D12Device* dev, UINT64 fence_value) {
+    if (fence_value != UINT64_MAX) return false;
+    const HRESULT reason = dev->GetDeviceRemovedReason();
+    if (SUCCEEDED(reason)) return false;
+    logf("lost device: 0x%08lX, %s", static_cast<unsigned long>(reason), removed_reason_text(reason));
+    log_removed_device_data(dev);
+    if (g_p && g_p->block) {
+        snprintf(g_p->block->host_message, sizeof(g_p->block->host_message),
+                 "the GPU device was lost (0x%08lX, %s): the game's own lighting from now on",
+                 static_cast<unsigned long>(reason), removed_reason_text(reason));
+        g_p->block->host_state = rfgrt_ipc::kHostFailed;
+    }
+    return true;
+}
+
 HANDLE to_handle(uint64_t v) { return reinterpret_cast<HANDLE>(static_cast<uintptr_t>(v)); }
 
 D3D12_RESOURCE_BARRIER transition(ID3D12Resource* r, D3D12_RESOURCE_STATES a, D3D12_RESOURCE_STATES b) {
@@ -287,8 +415,21 @@ int run(const RunParams& p) {
     if (FAILED(hr = factory->EnumAdapterByLuid(luid, IID_PPV_ARGS(&adapter)))) return fail("EnumAdapterByLuid", hr);
     DXGI_ADAPTER_DESC1 ad{};
     adapter->GetDesc1(&ad);
+    // Host.Dred: set before the device exists (it applies to the devices this process creates from now on; the game's
+    // own device is Direct3D 11's).
+    bool dredOn = false;
+    if (b->dred) {
+        ID3D12DeviceRemovedExtendedDataSettings* dredSettings = nullptr;
+        if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&dredSettings)))) {
+            dredSettings->SetAutoBreadcrumbsEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
+            dredSettings->SetPageFaultEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
+            dredSettings->Release();
+            dredOn = true;
+        }
+    }
     ID3D12Device* dev = nullptr;
     if (FAILED(hr = D3D12CreateDevice(adapter, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&dev)))) return fail("D3D12CreateDevice", hr);
+    logf("removed-device data (Host.Dred): %s", dredOn ? "on (breadcrumbs, page faults)" : b->dred ? "not available" : "off");
     D3D12_FEATURE_DATA_D3D12_OPTIONS5 o5{};
     dev->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &o5, sizeof(o5));
     char name[128];
@@ -691,6 +832,7 @@ int run(const RunParams& p) {
     ID3D12GraphicsCommandList4* cl = nullptr;
     if (FAILED(hr = dev->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_COMPUTE, alloc[0], nullptr, IID_PPV_ARGS(&cl))))
         return fail("command list", hr);
+    cl->SetName(L"rtcore frame");  // named in the removed-device data
     cl->Close();
     D3D12_QUERY_HEAP_DESC qhd{D3D12_QUERY_HEAP_TYPE_TIMESTAMP, kRing * kStamps, 0};
     ID3D12QueryHeap* qheap = nullptr;
@@ -758,8 +900,18 @@ int run(const RunParams& p) {
     float lastStateView[16] = {}, lastStateProj[16] = {}, lastProj[16] = {};
     ULONGLONG lastLog = GetTickCount64();
     uint64_t torn = 0, skippedNoSet = 0;
+    bool lost = false;
     while (!b->stop && peer_alive(p)) {
+        if (b->test_remove_device == 1 && dev5) {
+            b->test_remove_device = 2;
+            logf("test: the device removed (Test.KillHostAtSeconds)");
+            dev5->RemoveDevice();
+        }
         const UINT64 done = fenceB->GetCompletedValue();
+        if (device_lost(dev, done)) {
+            lost = true;
+            break;
+        }
         scene.set_frames(sig, done);
         skinning.collect(n, done);
         bool did = scene.pump();
@@ -2203,22 +2355,26 @@ int run(const RunParams& p) {
                 Sleep(1);
         }
     }
-    logf("stopping at frame %lld (%s)", static_cast<long long>(sig), b->stop ? "the plugin asked" : "the plugin's process ended");
+    logf("stopping at frame %lld (%s)", static_cast<long long>(sig),
+         lost ? "the GPU device was lost" : b->stop ? "the plugin asked" : "the plugin's process ended");
     scene.log_stats();
     // Frames queued past the plugin's last signal wait on fence A for good, and a device with work that can never
     // finish cannot be released (it hung the host at the end of every session). The plugin is stopping or gone, and
     // nothing it does from here depends on those frames: fence A is raised from here, the queue drains, and fence B
-    // reaches every value the plugin may still wait for.
-    fenceA->Signal(1ull << 62);
-    if (sig > 0) {
-        fenceB->SetEventOnCompletion(UINT64(sig), fenceEvent);
-        if (WaitForSingleObject(fenceEvent, 1000) != WAIT_OBJECT_0) logf("the frame queue did not drain within 1 s");
+    // reaches every value the plugin may still wait for. A lost device has nothing left to drain (its fences read
+    // UINT64_MAX), and the plugin releases its own waits on fence B once this thread has ended.
+    if (!lost) {
+        fenceA->Signal(1ull << 62);
+        if (sig > 0) {
+            fenceB->SetEventOnCompletion(UINT64(sig), fenceEvent);
+            if (WaitForSingleObject(fenceEvent, 1000) != WAIT_OBJECT_0) logf("the frame queue did not drain within 1 s");
+        }
     }
     scene.set_frames(0, UINT64(sig));
     scene.shutdown(500);
     skinning.release();
     tlas.release();
-    b->host_state = rfgrt_ipc::kHostExited;
+    if (!lost) b->host_state = rfgrt_ipc::kHostExited;  // a lost device keeps kHostFailed and its message
     CloseHandle(fenceEvent);
     if (sceneEvent) CloseHandle(sceneEvent);
     if (fenceBHandle) CloseHandle(fenceBHandle);
@@ -2306,7 +2462,7 @@ int run(const RunParams& p) {
     release(dev);
     release(adapter);
     release(factory);
-    return 0;
+    return lost ? 1 : 0;
 }
 
 }  // namespace rtcore

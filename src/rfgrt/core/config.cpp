@@ -79,6 +79,7 @@ Config load_config(const std::wstring& ini) {
     c.host_path = get_string(ini, L"Host", L"Path", L"");
     c.ring_mb = get_int(ini, L"Host", L"RingMB", 32);
     c.host_wait_ms = get_double(ini, L"Host", L"WaitMs", 50.0);
+    c.host_dred = get_int(ini, L"Host", L"Dred", 1) != 0;
     c.mirror_enabled = get_int(ini, L"Mirror", L"Enabled", 1) != 0;
     c.max_instances = get_int(ini, L"Mirror", L"MaxInstances", 65536);
     c.skinning = get_int(ini, L"Mirror", L"Skinning", 1) != 0;

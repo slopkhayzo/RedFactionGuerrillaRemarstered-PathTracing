@@ -27,6 +27,7 @@ struct Config {
     std::wstring host_path;       // empty: <plugin folder>\rfgrt\rfgrt_host.exe
     int ring_mb = 32;             // the scene ring between the plugin and the core (rounded up to a power of two)
     double host_wait_ms = 50.0;   // the most a frame waits for the core to queue it (a miss: the core's last result)
+    bool host_dred = true;        // the core's device keeps Direct3D 12's removed-device data, logged if it is lost
 
     // [Mirror]
     bool mirror_enabled = true;   // with the core: every mesh the game creates goes to the core (acceleration structures)

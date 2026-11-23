@@ -170,6 +170,7 @@ bool Link::create_region() {
     block_->frosted_glass = opt_.frosted_glass ? 1 : 0;
     block_->window_tint = opt_.window_tint ? 1 : 0;
     block_->tlas_fast_trace = opt_.tlas_fast_trace ? 1 : 0;
+    block_->dred = opt_.dred ? 1 : 0;
     for (int i = 0; i < 3; ++i) block_->terrain_albedo[i] = opt_.terrain_albedo[i];
     block_->ao_radius = opt_.ao_radius;
     block_->debug_view = opt_.debug_view;
@@ -737,6 +738,10 @@ void Link::kill_for_test() {
     if (process_) {
         LOG("link: ending rfgrt_host.exe as a crash would (test)");
         TerminateProcess(static_cast<HANDLE>(process_), 9);
+    } else if (core_thread_ && block_) {
+        // The core in this process loses its device instead (what a GPU hang does to it).
+        LOG("link: the core's device removed as a lost device would be (test)");
+        block_->test_remove_device = 1;
     }
 }
 
