@@ -136,6 +136,7 @@ add_library(rfgrt SHARED
     src/rfgrt/core/config.cpp
     src/rfgrt/core/session.cpp
     src/rfgrt/core/build_check.cpp
+    src/rfgrt/core/active.cpp
     src/rfgrt/core/gameloop.cpp
     src/rfgrt/game/rfg.cpp
     src/rfgrt/game/openrfg64.cpp

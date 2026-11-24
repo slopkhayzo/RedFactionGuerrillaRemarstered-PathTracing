@@ -15,8 +15,9 @@
 // rfgrt_host.exe (64-bit), linked by named shared memory; a 64-bit rfg.exe runs the core on a thread of this process
 // instead (RFGRT_LOCAL_CORE builds). Either way the protocol is rfgrt_ipc.h's.
 //
-// The core starts once, at the first mesh the game creates (or the first frame, without the mirror), and lives until
-// the game ends or the core dies; it is never restarted, since the mirror it holds cannot be sent again.
+// The core starts at the first mesh the game creates (or the first frame, without the mirror), and lives until the game
+// ends or the core dies. A game that switches path tracing off stops it (stop(): core/active.h) and starts another
+// later, which the scene mirror then gives every live mesh again (mirror/geometry.h).
 namespace rtlink {
 
 struct Options {
@@ -77,6 +78,11 @@ public:
     // session is ending, and the render thread may still be using the link (ring writes fail from now on). The host
     // process ends with the game in any case (job object).
     void request_stop(uint32_t wait_ms);
+    // Stops the core and releases all the link holds (the shared region, fences, frame textures, events, threads), so
+    // that start() starts a new core: path tracing switched off (core/active.h). Call it once no thread but the scene
+    // ring's writers uses the link (path tracing off, its frame work finished); those are waited out. True when the
+    // core ended within `wait_ms`; otherwise it keeps what it may still read and no core starts again.
+    bool stop(uint32_t wait_ms);
 
     bool started() const { return started_.load(); }
     // The core has published fence B and reads the ring. Render thread (opens fence B the first time).
@@ -141,6 +147,8 @@ public:
     // ring stayed full.
     bool ring_write(uint64_t bytes, void (*fill)(uint8_t* dst, void* ctx), void* ctx, uint32_t wait_ms = 3000);
     uint64_t ring_max_record() const { return block_ ? block_->ring_bytes / 2 : 0; }
+    // The largest record a core's ring takes, also while none runs (a mesh kept for a later core: mirror/geometry.h).
+    uint64_t ring_max_record_planned() const;
     // A record was dropped because the core stopped reading: the mirror is incomplete from then on.
     bool ring_stalled() const { return ring_stalled_.load(); }
     struct RingStats {

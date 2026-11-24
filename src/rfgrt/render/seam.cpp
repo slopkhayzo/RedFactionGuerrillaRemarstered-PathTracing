@@ -7,12 +7,14 @@
 #include <atomic>
 #include <cstdint>
 
+#include "core/active.h"
 #include "core/config.h"
 #include "core/log.h"
 #include "core/session.h"
 #include "game/rfg.h"
 #include "harness/screenshot.h"
 #include "hooks/hooks.h"
+#include "mirror/geometry.h"
 #include "mirror/instances.h"
 #include "mirror/textures.h"
 #include "render/d3d_state.h"
@@ -420,7 +422,7 @@ bool host_frame(ID3D11Device* dev, ID3D11DeviceContext* ctx, uint8_t* scene, ID3
         g_host_off = true;
         return false;
     }
-    if (!link.start(dev)) {
+    if (!link.started() && !geometry::start_core(dev)) {
         LOG("seam: the core did not start: the game's own shadows from now on");
         g_host_off = true;
         return false;
@@ -588,14 +590,16 @@ void on_seam(uint8_t* graphics, uint8_t* scene) {
 
 void __cdecl d_end_command_buffer(uint8_t* graphics, void* command_buffer) {
     o_end_command_buffer(graphics, command_buffer);
-    // Only the scene thread's list that rl_scene_renderer::render finishes and executes next.
+    // Only the scene thread's list that rl_scene_renderer::render finishes and executes next (render() sets it while
+    // path tracing is on).
     if (t_scene_renderer) on_seam(graphics, t_scene_renderer);
 }
 
 // Render.DebugView: the core's last result over the frame about to be presented (endFrame, render thread). At that
 // point the result holds this frame's answer: the core's next pass waits for the next frame's fence A.
 void draw_overlay(uint8_t* graphics, IDXGISwapChain* sc) {
-    if (!g_gpu.ready || g_host_off) return;
+    const active::Work work;
+    if (!g_gpu.ready || g_host_off || !work.on) return;
     rtlink::Link& link = rtlink::core_link();
     if (!link.ready() || !link.result_srv() || !link.block()) return;
     auto* ctx = rfg::field<ID3D11DeviceContext*>(graphics, rfg::off::GraphicsSystem_pImmediateContext);
@@ -638,6 +642,8 @@ DWORD WINAPI snapshot_worker_main(LPVOID) {
 
 void __fastcall d_scene_render(RFG_THIS(void*, self), void* renderer, void* sim_renderer, void* scene, void* camera,
                                void* hdr, void* color_correct) {
+    const active::Work work;  // (the whole render: the seam, the snapshot worker and the scene thread's passes)
+    if (!work.on) return o_scene_render(self, renderer, sim_renderer, scene, camera, hdr, color_correct);
     t_scene_renderer = static_cast<uint8_t*>(self);
     t_frame = 0;
     if (!g_main_scene || g_main_scene == self) gi::on_render(static_cast<uint8_t*>(renderer), static_cast<uint8_t*>(scene));
@@ -690,7 +696,7 @@ void __fastcall d_scene_render(RFG_THIS(void*, self), void* renderer, void* sim_
 // its pass mask then meets no instance's and no batch's; the cloud shadows stay.
 void __fastcall d_clb_render(RFG_THIS(void*, self), void* renderer, void* camera, void* light, void* vis, void* batched,
                              void** instances, int count) {
-    const bool drop = g_skip_cascades.load(std::memory_order_relaxed);
+    const bool drop = active::on() && g_skip_cascades.load(std::memory_order_relaxed);
     t_drop_casters = drop;
     o_clb_render(self, renderer, camera, light, vis, batched, instances, count);
     t_drop_casters = false;
@@ -704,7 +710,7 @@ void __fastcall d_clb_render(RFG_THIS(void*, self), void* renderer, void* camera
 // holds the core's occlusion, which it would overwrite.
 void(__cdecl* o_ssao)(void*, void*, void*, void*, void*, void*, void*, void*);
 void __cdecl d_ssao(void* a0, void* a1, void* a2, void* a3, void* a4, void* a5, void* a6, void* a7) {
-    if (g_skip_ssao.load(std::memory_order_relaxed)) {
+    if (active::on() && g_skip_ssao.load(std::memory_order_relaxed)) {
         ++g_ssao_skipped;
         return;
     }
@@ -771,6 +777,19 @@ void composite_fog(ID3D11DeviceContext* ctx, ID3D11RenderTargetView* target, uin
     saved.capture(ctx);
     fullscreen(ctx, target, w, h, g_gpu.fog_ps, fog, g_gpu.fog_blend);
     saved.restore(ctx);
+}
+
+void on_core_stop() {
+    g_skip_cascades = false;
+    g_skip_ssao = false;
+    g_casters_dropped = false;
+    g_host_off = false;  // a core that failed or died: the next one is tried
+    g_frame = 0;         // fence values: the next core's fences start again
+    g_frame_rendering.store(0, std::memory_order_release);
+    g_since_answer = 1 << 30;
+    if (g_last.srv) g_last.srv->Release();
+    if (g_last.tex) g_last.tex->Release();
+    g_last = LastResult{};
 }
 
 void shutdown(bool at_exit) {

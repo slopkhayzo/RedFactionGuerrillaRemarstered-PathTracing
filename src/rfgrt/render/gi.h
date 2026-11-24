@@ -47,5 +47,7 @@ bool lit_constants(LitConstants* out);
 // core's is (patch/fog.h). False: no change.
 bool patch_fog(const void* code, size_t size, std::vector<uint8_t>* out);
 void report(bool at_exit);
+// Path tracing switched off (core/active.h), before the core stops: none of its textures stays to be bound.
+void on_core_stop();
 
 }  // namespace gi

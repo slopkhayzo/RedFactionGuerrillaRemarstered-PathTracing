@@ -5,9 +5,12 @@
 
 #include <atomic>
 #include <cstdio>
+#include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
+#include "core/active.h"
 #include "core/config.h"
 #include "core/log.h"
 #include "core/session.h"
@@ -28,6 +31,31 @@ using CreateVsFn = HRESULT(STDMETHODCALLTYPE*)(ID3D11Device*, const void*, SIZE_
 using CreatePsFn = HRESULT(STDMETHODCALLTYPE*)(ID3D11Device*, const void*, SIZE_T, ID3D11ClassLinkage*, ID3D11PixelShader**);
 CreateVsFn o_create_vs = nullptr;
 CreatePsFn o_create_ps = nullptr;
+
+// A game that switches path tracing: each patched pixel shader in both versions, by the game's slot for it (its
+// FragmentShader's pointer). The slot holds one, which the game releases; the other is ours. Under g_versions_mutex.
+struct Versions {
+    ID3D11PixelShader* original;
+    ID3D11PixelShader* patched;
+};
+std::mutex g_versions_mutex;
+std::unordered_map<ID3D11PixelShader**, Versions> g_versions;
+bool g_two_versions = false;  // the game switches and has the release seam
+void(__cdecl* o_release_ps)(ID3D11PixelShader**) = nullptr;
+
+// The game releases a pixel shader: its slot's, which the game releases itself, and the other version with it.
+void __cdecl d_release_ps(ID3D11PixelShader** slot) {
+    if (slot) {
+        std::lock_guard<std::mutex> lock(g_versions_mutex);
+        auto it = g_versions.find(slot);
+        if (it != g_versions.end()) {
+            ID3D11PixelShader* other = *slot == it->second.patched ? it->second.original : it->second.patched;
+            if (other) other->Release();
+            g_versions.erase(it);
+        }
+    }
+    o_release_ps(slot);
+}
 
 // <run>\shaders\<effect file>\<FNV-1a hash of the bytecode>_<ps|vs>.dxbc: an effect file holds several shaders, each
 // kept (the layout research/scripts/shaders.py extracts misc.vpp_pc to, for tools/shaderpatch).
@@ -67,6 +95,22 @@ HRESULT STDMETHODCALLTYPE d_create_ps(ID3D11Device* self, const void* code, SIZE
     bool changed = gi::patch_pixel_shader(code, size, &patched) || lights::patch_pixel_shader(code, size, &patched);
     // the game's fog, last, on the shader as patched so far (lit passes and lights' passes alike)
     if (gi::patch_fog(changed ? patched.data() : code, changed ? patched.size() : size, &patched)) changed = true;
+    if (changed && g_two_versions && out) {  // both: the original for path tracing off, the patched one for on
+        ID3D11PixelShader* original = nullptr;
+        const HRESULT hr = o_create_ps(self, code, size, linkage, &original);
+        if (FAILED(hr)) return hr;
+        ID3D11PixelShader* ours = nullptr;
+        if (FAILED(o_create_ps(self, patched.data(), patched.size(), linkage, &ours)) || !ours) {
+            static std::atomic<int> logged{0};
+            if (logged.fetch_add(1) < 4) LOG("shaders: a patched pixel shader was refused: the original is used");
+            *out = original;
+            return hr;
+        }
+        std::lock_guard<std::mutex> lock(g_versions_mutex);
+        g_versions[out] = Versions{original, ours};
+        *out = active::on() ? ours : original;
+        return hr;
+    }
     if (changed) {
         const HRESULT hr = o_create_ps(self, patched.data(), patched.size(), linkage, out);
         if (SUCCEEDED(hr)) return hr;
@@ -116,10 +160,22 @@ void report(bool) {
 
 }  // namespace
 
+void use_patched(bool on) {
+    std::lock_guard<std::mutex> lock(g_versions_mutex);
+    for (auto& entry : g_versions) *entry.first = on ? entry.second.patched : entry.second.original;
+    LOG("shaders: %zu patched pixel shaders %s", g_versions.size(), on ? "bound (path tracing)" : "swapped for the game's originals");
+}
+
 bool install(const Config& cfg) {
     g_dump = cfg.dump_shaders;
     if (!cfg.dump_shaders && !cfg.gi_enabled && !cfg.lights_enabled) return true;
     session::add_flush_handler(&report);
+    if (active::switchable()) {
+        g_two_versions = hooks::seam("openrfg_release_pixel_shader", reinterpret_cast<void*>(&d_release_ps),
+                                     reinterpret_cast<void**>(&o_release_ps));
+        LOG("shaders: %s", g_two_versions ? "the patched pixel shaders made beside the originals (path tracing switches)"
+                                          : "no seam for the shaders' release: the patched ones stay with path tracing off");
+    }
     bool ok = hooks::create(rfg::rva::keen__graphics__createVertexShaderFromFile, &d_create_vs_file, &o_create_vs_file,
                             "keen::graphics::createVertexShaderFromFile");
     ok &= hooks::create(rfg::rva::keen__graphics__createFragmentShaderFromFile, &d_create_fs_file, &o_create_fs_file,

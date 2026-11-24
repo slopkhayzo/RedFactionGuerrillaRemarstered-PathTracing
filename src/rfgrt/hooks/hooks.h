@@ -17,6 +17,9 @@ bool create_now(void* target, void* detour, void** original, const char* name);
 
 // The game's seams (hooks/binding.h): set before the first hook is created.
 void set_binding(const rfgrt_binding& binding);
+// A hook on a seam the game names, for what only a game with seams has (no function of rfg.exe's behind it): on at
+// enable_all. False without a binding, or when the game has no seam of that name.
+bool seam(const char* name, void* detour, void** original);
 // Where the game called the running handler from: `return_address` (the handler's _ReturnAddress()) for a detour; for a
 // handler on a seam, which the seam itself calls, the seam's caller.
 const void* caller(const void* return_address);

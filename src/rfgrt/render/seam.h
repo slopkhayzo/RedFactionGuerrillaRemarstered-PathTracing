@@ -17,6 +17,9 @@ namespace seam {
 bool install(const Config& cfg);
 // Stops the ray tracing core (session flush handler).
 void shutdown(bool at_exit);
+// Path tracing switched off (core/active.h), before the core stops: what this frame seam keeps of the core's frames
+// (fence values, its last result, the shadow and occlusion skips) goes back to its start, for the next core.
+void on_core_stop();
 // The frame number of the render() under way, for the scene thread that records the same frame's passes (its
 // command list ends at the seam): 0 before frames are exchanged with the core.
 int64_t frame_rendering();

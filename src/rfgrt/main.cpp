@@ -3,9 +3,11 @@
 // for a 64-bit rfg.exe. See research/docs.
 #include <windows.h>
 
+#include <mutex>
 #include <string>
 #include <vector>
 
+#include "core/active.h"
 #include "core/build_check.h"
 #include "core/config.h"
 #include "core/gameloop.h"
@@ -160,9 +162,48 @@ void init() {
     if (!shader_dump::install(cfg)) LOG("shader dump hooks failed: no shaders saved");
     if (!hooks::enable_all()) return;
     if (hooks::seamed() > 0) LOG("hooks: %d on the game's seams", hooks::seamed());
+    if (active::switchable())
+        LOG("path tracing switches with the game's renderer: %s now", active::on() ? "on" : "off (the game's own rendering)");
     session::start_watchdog();
     InterlockedExchange(&g_state, 2);
     LOG("initialization complete");
+}
+
+// A switch of path tracing (core/active.h), made where no level is loaded (the game's main menu, which draws a scene of
+// its own: a frame under way is waited for).
+std::mutex g_switch_mutex;
+
+DWORD WINAPI start_core_main(LPVOID) {
+    // (switched off again meanwhile: nothing started)
+    if (!geometry::start_core(nullptr) && active::on()) LOG("path tracing: the core did not start: the game's own shadows");
+    return 0;
+}
+
+void switch_on() {
+    LOG("path tracing on (the game's renderer switched)");
+    shader_dump::use_patched(true);
+    active::set_on(true);
+    // The core, and the kept meshes written to it, on a thread of its own: the game goes on meanwhile (its first frame
+    // with a scene waits for the core to be ready, as at the game's start).
+    if (HANDLE t = CreateThread(nullptr, 0, &start_core_main, nullptr, 0, nullptr))
+        CloseHandle(t);
+    else
+        start_core_main(nullptr);
+}
+
+void switch_off() {
+    LOG("path tracing off (the game's renderer switched): the game's own rendering, the core stopped");
+    active::set_on(false);
+    shader_dump::use_patched(false);
+    // the render hooks' work under way finished first (the main menu draws a scene too)
+    if (!active::wait_idle(5000)) LOG("path tracing: a frame's work still under way after 5 s: stopping anyway");
+    // what the modules hold of the core's, before it and its textures go
+    seam::on_core_stop();
+    gi::on_core_stop();
+    lights::on_core_stop();
+    instances::on_core_stop();
+    textures::on_core_stop();
+    geometry::stop_core();  // (after a start under way)
 }
 
 }  // namespace
@@ -176,6 +217,26 @@ extern "C" __declspec(dllexport) void InitializeASI() {
 // For a game that loads the plugin itself (OpenRFG64 VOM's renderer backend), after InitializeASI: 0 not started,
 // 1 inactive (the log says why), 2 running.
 extern "C" __declspec(dllexport) int rfgrt_state() { return int(g_state); }
+
+// For a game that switches its renderer (OpenRFG64 VOM's RENDERER row; core/active.h). Before InitializeASI: the game
+// switches, and path tracing starts on (1) or off (0); the plugin then keeps what a later start needs. Afterwards: a
+// switch, made where no level is loaded (its main menu); the core starts on a thread of its own and stops at once. Returns whether path tracing is on (0 also when the plugin is inactive or the game did not say it switches).
+extern "C" __declspec(dllexport) int rfgrt_set_active(int on) {
+    if (g_state == 0) {
+        active::set_switchable(on != 0);
+        return on != 0;
+    }
+    if (g_state != 2 || !active::switchable()) return 0;
+    std::lock_guard<std::mutex> lock(g_switch_mutex);
+    const bool want = on != 0;
+    if (active::on() != want) {
+        if (want)
+            switch_on();
+        else
+            switch_off();
+    }
+    return want ? 1 : 0;
+}
 
 // For a game with seams for the plugin's hooks (OpenRFG64 VOM's renderer backend; hooks/binding.h): before
 // InitializeASI.

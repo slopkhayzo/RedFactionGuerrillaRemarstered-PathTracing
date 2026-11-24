@@ -7,6 +7,7 @@
 #include <cstring>
 #include <mutex>
 
+#include "core/active.h"
 #include "core/config.h"
 #include "core/log.h"
 #include "core/session.h"
@@ -129,6 +130,8 @@ void(__thiscall* o_set_shadow_states)(void*, void*, uint8_t*);
 // A dynamic light's pass gets its shadow mask at t15 instead (render/lights.h).
 void __fastcall d_set_shadow_states(RFG_THIS(void*, self), void* params, uint8_t* renderer) {
     o_set_shadow_states(self, params, renderer);
+    const active::Work work;
+    if (!work.on) return;  // the game's original shaders: nothing of ours to bind
     if (g_on && renderer && main_scene(self)) capture_lit(renderer);  // the constants this lit pass draws with
     ID3D11ShaderResourceView* srv = g_on ? g_bind.load(std::memory_order_acquire) : nullptr;
     ID3D11ShaderResourceView* t15 = lights::t15_override();
@@ -178,6 +181,12 @@ bool install(const Config& cfg) {
                                        "rl_scene_renderer::set_shadow_states");
     if (g_on) LOG("gi: on (debug %d): lit base-pass shaders read their ambient from t%u", cfg.gi_debug, ambient::kIrradianceSlot);
     return ok;
+}
+
+void on_core_stop() {
+    for (std::atomic<ID3D11ShaderResourceView*>* b : {&g_bind, &g_bind_refl, &g_bind_glass, &g_bind_glass_refl, &g_bind_tint, &g_bind_fog})
+        b->store(nullptr, std::memory_order_release);
+    g_fog_armed.store(false, std::memory_order_release);
 }
 
 void on_render(uint8_t* renderer, uint8_t* scene) {

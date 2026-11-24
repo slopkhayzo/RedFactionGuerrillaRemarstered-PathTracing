@@ -3,6 +3,7 @@
 #include <mutex>
 
 struct Config;
+struct ID3D11Device;
 
 // The renderer's meshes: keen::graphics::initializeRenderGeometry creates every one and freeRenderGeometry releases
 // it (research/docs/01 section 5). Two users feed from these hooks:
@@ -10,11 +11,19 @@ struct Config;
 //   - the scene mirror (Mirror.Enabled, with the core): each mesh, decoded while its CPU data still exists (positions
 //     as float3, triangle lists, rl_mesh's submesh table), goes to the core through the scene ring, which turns it
 //     into bottom-level acceleration structures; a release removes it there.
+// For a game that switches path tracing (core/active.h) every live mesh's record is kept too, and each core started gets
+// them all.
 namespace geometry {
 
 bool install(const Config& cfg);
 // The mirror's counters (and the census's), every 15 s and at the end.
 void report(bool at_exit);
+
+// The core started if it is not, with the game's device (null: the one its first mesh came with); a game that switches
+// path tracing has every kept mesh written to it then. False when it cannot start.
+bool start_core(ID3D11Device* device);
+// Path tracing switched off: the core stopped and released (rt/link.h), the kept meshes left for the next one.
+void stop_core();
 
 // The scene ring's id of a mesh (its keen::RenderGeometry), 0 when the mirror does not have it. Hold lock_ids()
 // around a series of lookups.

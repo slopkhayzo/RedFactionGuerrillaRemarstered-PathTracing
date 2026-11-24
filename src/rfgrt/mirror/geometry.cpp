@@ -14,6 +14,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "core/active.h"
 #include "core/config.h"
 #include "core/log.h"
 #include "core/session.h"
@@ -86,6 +87,21 @@ struct PendingTerrain {
 };
 std::mutex g_pending_mutex;
 std::unordered_map<const uint8_t*, PendingTerrain> g_pending;
+
+// A game that switches path tracing (core/active.h): every live mesh's record (its MeshAdd as the ring takes it), kept
+// for a core started later, and whether the running core has it. Under g_kept_mutex, which also covers the mesh records
+// written meanwhile, so that each core gets the adds and removes in the order the game made and released the meshes
+// (taken before g_ids_mutex, and before the link's own locks). Height meshes are not kept: a level's, and a switch is
+// made where none is loaded (the game's main menu).
+struct Kept {
+    uint32_t id = 0;
+    std::vector<uint8_t> record;
+    bool sent = false;
+};
+std::mutex g_kept_mutex;
+std::unordered_map<const uint8_t*, Kept> g_kept;  // by RenderGeometry
+uint64_t g_kept_bytes = 0;                        // under g_kept_mutex
+std::atomic<ID3D11Device*> g_device{nullptr};     // the game's, from its first mesh: a core started by a switch
 
 constexpr int kFormats = 26;
 struct Counters {
@@ -565,9 +581,132 @@ void send_remove(uint32_t id) {
     ++g_n.removed;
 }
 
+// --- kept meshes (a game that switches path tracing) -----------------------------------------------------------------
+
+void count_sent(const MeshAdd& m) {
+    ++g_n.sent;
+    if (m.source == kSourceTerrain) ++g_n.terrain;
+    if (m.flags & kMeshSkinned) ++g_n.skinned_sent;
+    if (m.flags & kMeshUV) ++g_n.with_uv;
+    g_n.vertices += m.vertex_count;
+    g_n.triangles += m.index_count / 3;
+    g_n.submeshes += m.submesh_count;
+    g_n.bytes += m.h.bytes;
+}
+
+// A kept record to the running core. A core just started reads its ring only once it is up (a second or two): records
+// past what the ring holds wait for it that long.
+bool write_kept(Kept& k, uint32_t wait_ms) {
+    k.sent = rtlink::core_link().ring_write(
+        k.record.size(),
+        [](uint8_t* dst, void* ctx) {
+            const auto& r = *static_cast<const std::vector<uint8_t>*>(ctx);
+            memcpy(dst, r.data(), r.size());
+        },
+        &k.record, wait_ms);
+    if (k.sent) count_sent(*reinterpret_cast<const MeshAdd*>(k.record.data()));
+    return k.sent;
+}
+
+// The core started if it is not (with the game's device: the one its first mesh came with when null), and every kept
+// mesh it lacks written to it. Under g_kept_mutex.
+bool start_core_locked(ID3D11Device* device) {
+    rtlink::Link& link = rtlink::core_link();
+    const bool was_started = link.started();
+    if (!link.start(device ? device : g_device.load())) return false;
+    if (was_started) return true;
+    uint64_t n = 0, bytes = 0, failed = 0;
+    for (auto& entry : g_kept) {
+        Kept& k = entry.second;
+        if (k.sent) continue;
+        if (write_kept(k, 15000)) {
+            ++n;
+            bytes += k.record.size();
+        } else {
+            ++failed;
+        }
+    }
+    LOG("mirror: a core started: %llu kept meshes written to it (%.1f MB)%s", static_cast<unsigned long long>(n),
+        bytes / 1048576.0, failed ? ", some not (the ring)" : "");
+    return true;
+}
+
+// The game released a mesh, or made it again without a release: no longer kept, and the running core told if it has
+// it. Under g_kept_mutex.
+void forget_locked(const uint8_t* geometry) {
+    bool kept = false, sent = false;
+    auto k = g_kept.find(geometry);
+    if (k != g_kept.end()) {
+        kept = true;
+        sent = k->second.sent;
+        g_kept_bytes -= k->second.record.size();
+        g_kept.erase(k);
+    }
+    uint32_t id = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_ids_mutex);
+        auto it = g_ids.find(geometry);
+        if (it != g_ids.end()) {
+            id = it->second;
+            g_ids.erase(it);
+        }
+        if (id) g_chunked.erase(id);
+    }
+    // (a height mesh is not kept: the core may have it)
+    if (id && (sent || !kept) && rtlink::core_link().started()) send_remove(id);
+    bool dropped = false;
+    {
+        std::lock_guard<std::mutex> lock(g_pending_mutex);
+        dropped = g_pending.erase(geometry) != 0;
+    }
+    if (dropped) ++g_n.terrain_dropped;
+}
+
+// A mesh made (switchable): kept, and written to the core while path tracing is on (the first mesh then starts it).
+void keep(uint8_t* geometry, uint8_t* graphics, Source& s) {
+    rtlink::Link& link = rtlink::core_link();
+    ID3D11Device* device = rfg::field<ID3D11Device*>(graphics, rfg::off::GraphicsSystem_pDevice);
+    if (device && !g_device.load()) g_device = device;
+    if (s.layout.bytes > link.ring_max_record_planned()) return void(++g_n.skip_large);
+    std::lock_guard<std::mutex> lock(g_kept_mutex);
+    forget_locked(geometry);  // made again without a release
+    const bool on = active::on() && start_core_locked(device);
+    if (s.terrain && g_terrain_chunks) {  // kept until its chunk table is there (terrain()), not for a later core
+        PendingTerrain p;
+        p.id = g_next_id.fetch_add(1);
+        p.vertex_count = s.vertex_count;
+        p.vertices.resize(size_t(s.vertex_count) * 4);
+        for (uint32_t i = 0; i < s.vertex_count; ++i) memcpy(p.vertices.data() + size_t(i) * 4, s.vertices + size_t(i) * s.stride, 4);
+        p.index_bytes = s.index_bytes;
+        p.index_count = s.index_count;
+        if (s.index_bytes) p.indices.assign(s.indices, s.indices + size_t(s.index_count) * s.index_bytes);
+        p.strip = s.strip;
+        {
+            std::lock_guard<std::mutex> ids(g_ids_mutex);
+            g_ids[geometry] = p.id;
+        }
+        std::lock_guard<std::mutex> pending(g_pending_mutex);
+        g_pending[geometry] = std::move(p);
+        return;
+    }
+    s.id = g_next_id.fetch_add(1);
+    Kept k;
+    k.id = s.id;
+    k.record.resize(size_t(s.layout.bytes));
+    fill_mesh(k.record.data(), &s);
+    if (on) write_kept(k, 3000);
+    {
+        std::lock_guard<std::mutex> ids(g_ids_mutex);
+        g_ids[geometry] = s.id;
+    }
+    g_kept_bytes += k.record.size();
+    g_kept[geometry] = std::move(k);
+    if (s.skinned) keep_skin_sample(s);
+}
+
 void mirror_create(uint8_t* geometry, uint8_t* graphics, uint8_t* desc, uint8_t* init, const char* name, Creator creator) {
     uint32_t stale = 0;
-    {
+    if (!active::switchable()) {
         std::lock_guard<std::mutex> lock(g_ids_mutex);
         auto it = g_ids.find(geometry);
         if (it != g_ids.end()) {
@@ -580,6 +719,7 @@ void mirror_create(uint8_t* geometry, uint8_t* graphics, uint8_t* desc, uint8_t*
     if (!describe(geometry, desc, init, creator, name, s)) return;
     plan(s);
     if (s.ranges.empty()) return void(++g_n.skip_empty);
+    if (active::switchable()) return keep(geometry, graphics, s);
     rtlink::Link& link = rtlink::core_link();
     if (!link.start(rfg::field<ID3D11Device*>(graphics, rfg::off::GraphicsSystem_pDevice))) return void(++g_n.skip_ring);
     if (s.layout.bytes > link.ring_max_record()) return void(++g_n.skip_large);
@@ -658,7 +798,10 @@ bool __cdecl d_init_geometry(uint8_t* geometry, uint8_t* graphics, uint8_t* desc
 }
 
 void __cdecl d_free_geometry(uint8_t* geometry, uint8_t* graphics, void* allocator) {
-    if (g_mirror && geometry) {
+    if (g_mirror && geometry && active::switchable()) {
+        std::lock_guard<std::mutex> lock(g_kept_mutex);
+        forget_locked(geometry);
+    } else if (g_mirror && geometry) {
         uint32_t id = 0;
         {
             std::lock_guard<std::mutex> lock(g_ids_mutex);
@@ -683,6 +826,16 @@ void __cdecl d_free_geometry(uint8_t* geometry, uint8_t* graphics, void* allocat
     o_free_geometry(geometry, graphics, allocator);
 }
 
+// Switchable: how many meshes are kept for a later core, for the log.
+std::string kept_note(bool at_exit) {
+    if (!active::switchable()) return std::string();
+    std::unique_lock<std::mutex> lock(g_kept_mutex, std::defer_lock);
+    if (at_exit ? !lock.try_lock() : (lock.lock(), false)) return std::string();
+    char note[96];
+    snprintf(note, sizeof(note), "; %zu kept for a later core (%.1f MB)", g_kept.size(), g_kept_bytes / 1048576.0);
+    return note;
+}
+
 void log_mirror(bool at_exit) {
     size_t live = 0;
     {
@@ -690,12 +843,12 @@ void log_mirror(bool at_exit) {
         if (at_exit ? lock.try_lock() : (lock.lock(), true)) live = g_ids.size();
     }
     LOG("mirror: %llu meshes sent (%llu of them terrain, %llu skinned; %llu vertices, %llu triangles, %llu submeshes, %.1f MB), "
-        "%llu released, %zu live",
+        "%llu released, %zu live%s",
         static_cast<unsigned long long>(g_n.sent.load()), static_cast<unsigned long long>(g_n.terrain.load()),
         static_cast<unsigned long long>(g_n.skinned_sent.load()),
         static_cast<unsigned long long>(g_n.vertices.load()),
         static_cast<unsigned long long>(g_n.triangles.load()), static_cast<unsigned long long>(g_n.submeshes.load()),
-        g_n.bytes.load() / 1048576.0, static_cast<unsigned long long>(g_n.removed.load()), live);
+        g_n.bytes.load() / 1048576.0, static_cast<unsigned long long>(g_n.removed.load()), live, kept_note(at_exit).c_str());
     std::string formats;
     for (int f = 0; f < kFormats; ++f) {
         if (const uint64_t n = g_n.skip_position_format[f].load()) {
@@ -772,6 +925,34 @@ bool install(const Config& cfg) {
 void report(bool at_exit) {
     if (g_census) geometry_census::report(at_exit);
     if (g_mirror) log_mirror(at_exit);
+}
+
+bool start_core(ID3D11Device* device) {
+    if (!active::switchable()) return rtlink::core_link().start(device);
+    std::lock_guard<std::mutex> lock(g_kept_mutex);
+    if (!active::on()) return false;  // switched off again before this start came
+    return start_core_locked(device);
+}
+
+void stop_core() {
+    std::lock_guard<std::mutex> lock(g_kept_mutex);
+    rtlink::core_link().stop(5000);
+    for (auto& entry : g_kept) entry.second.sent = false;
+    // Height meshes the core got cannot be sent again (a level's: none is loaded where a switch is made); their
+    // instances go without them.
+    std::lock_guard<std::mutex> ids(g_ids_mutex);
+    std::lock_guard<std::mutex> pending(g_pending_mutex);
+    size_t dropped = 0;
+    for (auto it = g_ids.begin(); it != g_ids.end();) {
+        if (!g_kept.count(it->first) && !g_pending.count(it->first)) {
+            it = g_ids.erase(it);
+            ++dropped;
+        } else {
+            ++it;
+        }
+    }
+    g_chunked.clear();
+    if (dropped) LOG("mirror: %zu height meshes the stopped core had are not sent again", dropped);
 }
 
 std::unique_lock<std::mutex> lock_ids() { return std::unique_lock<std::mutex>(g_ids_mutex); }

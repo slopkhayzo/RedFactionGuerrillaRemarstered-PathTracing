@@ -97,9 +97,18 @@ bool Link::start_locked(ID3D11Device* device) {
     return true;
 }
 
-bool Link::create_region() {
+namespace {
+uint64_t ring_bytes_for(uint32_t ring_mb) {
     uint64_t ring = 1ull << 20;
-    while (ring < uint64_t(opt_.ring_mb) << 20 && ring < (1ull << 30)) ring <<= 1;
+    while (ring < uint64_t(ring_mb) << 20 && ring < (1ull << 30)) ring <<= 1;
+    return ring;
+}
+}  // namespace
+
+uint64_t Link::ring_max_record_planned() const { return ring_bytes_for(opt_.ring_mb) / 2; }
+
+bool Link::create_region() {
+    const uint64_t ring = ring_bytes_for(opt_.ring_mb);
     const uint32_t max_instances = opt_.snapshots ? opt_.max_instances : 0;
     const uint32_t max_skins = opt_.snapshots && opt_.max_bones ? opt_.max_skins : 0;
     const uint32_t max_bones = max_skins ? opt_.max_bones : 0;
@@ -743,6 +752,62 @@ void Link::kill_for_test() {
         LOG("link: the core's device removed as a lost device would be (test)");
         block_->test_remove_device = 1;
     }
+}
+
+bool Link::stop(uint32_t wait_ms) {
+    std::lock_guard<std::mutex> lock(start_mutex_);
+    if (started_.load()) {
+        stopping_ = true;
+        block_->stop = 1;
+        if (stop_event_) SetEvent(static_cast<HANDLE>(stop_event_));
+        HANDLE core = static_cast<HANDLE>(process_ ? process_ : core_thread_);
+        if (core && WaitForSingleObject(core, wait_ms) != WAIT_OBJECT_0) {
+            LOG("link: the core did not stop within %lu ms: it keeps what it has, and no core starts again",
+                static_cast<unsigned long>(wait_ms));
+            start_failed_ = true;
+            return false;
+        }
+        if (monitor_) WaitForSingleObject(static_cast<HANDLE>(monitor_), 2000);  // it ends on stop_event_
+    }
+    std::lock_guard<std::mutex> ring_lock(ring_mutex_);  // a scene record being written is finished first
+    started_ = false;
+    release_frame_resources();
+    rel(radiance_srv_);
+    rel(radiance_);
+    radiance_w_ = radiance_h_ = radiance_format_ = 0;
+    radiance_failed_ = false;
+    rel(fence_b_);
+    rel(fence_a_);
+    close_handle(fence_a_nt_);
+    close_handle(fence_b_nt_);
+    if (block_ && block_->fence_b_handle) CloseHandle(to_handle(block_->fence_b_handle));  // the core's, duplicated for us
+    close_handle(monitor_);
+    close_handle(core_thread_);
+    close_handle(process_);
+    close_handle(job_);
+    close_handle(stop_event_);
+    close_handle(scene_event_);
+    if (region_) {
+        if (opt_.in_process)
+            VirtualFree(region_, 0, MEM_RELEASE);
+        else
+            UnmapViewOfFile(region_);
+    }
+    close_handle(mapping_);
+    region_ = nullptr;
+    block_ = nullptr;
+    region_name_[0] = 0;
+    writer_ = rfgrt_scene::RingWriter{};
+    generation_ = 0;
+    width_ = height_ = 0;
+    depth_remote_ = result_remote_ = 0;
+    fence_b_failed_ = false;
+    ring_stalled_ = false;
+    dead_ = false;
+    stopping_ = false;
+    start_failed_ = false;
+    LOG("link: the core stopped; the region, fences and frame textures released");
+    return true;
 }
 
 void Link::request_stop(uint32_t wait_ms) {

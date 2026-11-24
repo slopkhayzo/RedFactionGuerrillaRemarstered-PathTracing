@@ -163,7 +163,7 @@ void shutdown() {
     if (s.parameters) NVSDK_NGX_D3D12_DestroyParameters(s.parameters);
     s.parameters = nullptr;
     if (s.initialized && s.available) NVSDK_NGX_D3D12_Shutdown1(nullptr);
-    s.available = false;
+    s = State{};  // a core started later (path tracing switched on again) initializes NGX again
 }
 
 #else

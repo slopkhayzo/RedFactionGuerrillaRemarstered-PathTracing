@@ -310,6 +310,15 @@ void on_seam(ID3D11Device* dev, ID3D11DeviceContext* ctx, int64_t frame, int64_t
     }
 }
 
+void on_core_stop() {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    g_ids.clear();
+    g_asked.clear();
+    g_next = 0;
+    for (auto& s : g_state) s.store(kUnknown);
+    g_copied.clear();  // (the render thread's: idle here, path tracing off and its frame work finished)
+}
+
 void log_stats() {
     if (!g_enabled.load()) return;
     size_t asked = 0, known = 0;

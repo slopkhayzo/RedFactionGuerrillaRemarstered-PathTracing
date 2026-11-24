@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstring>
 
+#include "core/active.h"
 #include "core/config.h"
 #include "core/log.h"
 #include "core/session.h"
@@ -105,6 +106,7 @@ ID3D11DeviceContext* context_of(uint8_t* renderer) {
 void(__thiscall* o_set_light)(void*, uint8_t*, uint32_t);
 void __fastcall d_set_light(RFG_THIS(void*, self), uint8_t* light, uint32_t main) {
     o_set_light(self, light, main);
+    if (!active::on()) return;
     t_light = (main & 0xFF) ? nullptr : light;
     if (t_light && t_in_passes) ++g_light_passes;
 }
@@ -113,6 +115,8 @@ void __fastcall d_set_light(RFG_THIS(void*, self), uint8_t* light, uint32_t main
 // each after set_light and set_shadow_states. ClbTexture goes back to t15 afterwards.
 void(__thiscall* o_lighting)(void*, uint8_t*, void*, void*, void*, void*, void*, void*);
 void __fastcall d_lighting(RFG_THIS(void*, self), uint8_t* renderer, void* a1, void* a2, void* a3, void* a4, void* a5, void* a6) {
+    const active::Work work;
+    if (!work.on) return o_lighting(self, renderer, a1, a2, a3, a4, a5, a6);
     struct LitAtEnd {  // the lit colour for the GI rays, once the passes are drawn; the volumetric fog (render/gi.h)
         uint8_t* scene_renderer;
         uint8_t* renderer;
@@ -147,6 +151,16 @@ void __fastcall d_lighting(RFG_THIS(void*, self), uint8_t* renderer, void* a1, v
 }  // namespace
 
 bool enabled() { return g_on; }
+
+void on_core_stop() {
+    for (uint32_t m = 0; m < rfgrt_ipc::kMaxLightMasks; ++m) {
+        g_owner[m] = nullptr;
+        g_valid[m] = false;
+        g_fresh[m] = false;
+    }
+    g_core_ok = false;
+    g_frame_count = 0;
+}
 
 bool install(const Config& cfg) {
     g_on = cfg.lights_enabled && cfg.host_enabled && cfg.host_mode == rfgrt_ipc::kModeSunShadows;
