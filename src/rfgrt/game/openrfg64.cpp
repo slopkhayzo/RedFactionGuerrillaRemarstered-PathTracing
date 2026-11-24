@@ -18,4 +18,11 @@ int load(std::string& report) {
     return ::openrfg64::load(kOpenRFG64Names, std::size(kOpenRFG64Names), rfg::base(), report);
 }
 
+const ::openrfg64::Name* symbol_of(uint32_t rva) {
+    if (rfg::build() != build_index() || rva == 0) return nullptr;
+    for (const ::openrfg64::Name& n : kOpenRFG64Names)
+        if (n.kind == 'f' && n.value && *n.value == rva) return &n;
+    return nullptr;
+}
+
 }  // namespace rfg::openrfg64

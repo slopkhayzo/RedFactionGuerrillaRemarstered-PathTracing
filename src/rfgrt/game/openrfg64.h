@@ -6,6 +6,10 @@
 #include <cstdint>
 #include <string>
 
+namespace openrfg64 {
+struct Name;  // shared/openrfg64_column.h
+}
+
 namespace rfg::openrfg64 {
 
 // The build index select_build() takes for OpenRFG64 (one past the table's builds).
@@ -17,5 +21,9 @@ bool detected(const char* pdb_path, uint16_t machine);
 // Fills the values from the program's PDB. Returns how many names were not found or were ambiguous (their values
 // stay 0: rfg::fn/addr callers must treat a 0 RVA as missing); report gets one line per problem and a summary.
 int load(std::string& report);
+
+// While OpenRFG64 runs, the names table's entry of the function at `rva`: its name and parameters in the PDB, by which
+// a game with seams finds its seam (hooks/binding.h). Null otherwise.
+const ::openrfg64::Name* symbol_of(uint32_t rva);
 
 }  // namespace rfg::openrfg64

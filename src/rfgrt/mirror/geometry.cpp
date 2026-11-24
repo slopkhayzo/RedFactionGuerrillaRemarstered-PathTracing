@@ -644,9 +644,10 @@ bool(__cdecl* o_init_geometry)(uint8_t*, uint8_t*, uint8_t*, uint8_t*, const cha
 void(__cdecl* o_free_geometry)(uint8_t*, uint8_t*, void*);
 
 bool __cdecl d_init_geometry(uint8_t* geometry, uint8_t* graphics, uint8_t* desc, uint8_t* init, const char* name) {
+    const void* caller = hooks::caller(_ReturnAddress());  // where the game called from (a seam's caller, through one)
     const bool ok = o_init_geometry(geometry, graphics, desc, init, name);
     if (!ok || !geometry || !desc || !init) return ok;
-    const uintptr_t from = reinterpret_cast<uintptr_t>(_ReturnAddress()) - rfg::base();
+    const uintptr_t from = reinterpret_cast<uintptr_t>(caller) - rfg::base();
     const Creator creator = creator_of(from);
     if (g_census) {
         char buf[32];

@@ -14,6 +14,7 @@
 #include "game/openrfg64.h"
 #include "game/rfg.h"
 #include "harness/shader_dump.h"
+#include "hooks/binding.h"
 #include "hooks/hooks.h"
 #include "mirror/geometry.h"
 #include "mirror/instances.h"
@@ -158,6 +159,7 @@ void init() {
     session::add_flush_handler(&instances::report);
     if (!shader_dump::install(cfg)) LOG("shader dump hooks failed: no shaders saved");
     if (!hooks::enable_all()) return;
+    if (hooks::seamed() > 0) LOG("hooks: %d on the game's seams", hooks::seamed());
     session::start_watchdog();
     InterlockedExchange(&g_state, 2);
     LOG("initialization complete");
@@ -174,6 +176,12 @@ extern "C" __declspec(dllexport) void InitializeASI() {
 // For a game that loads the plugin itself (OpenRFG64 VOM's renderer backend), after InitializeASI: 0 not started,
 // 1 inactive (the log says why), 2 running.
 extern "C" __declspec(dllexport) int rfgrt_state() { return int(g_state); }
+
+// For a game with seams for the plugin's hooks (OpenRFG64 VOM's renderer backend; hooks/binding.h): before
+// InitializeASI.
+extern "C" __declspec(dllexport) void rfgrt_set_binding(const rfgrt_binding* binding) {
+    if (binding) hooks::set_binding(*binding);
+}
 
 BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID reserved) {
     if (reason == DLL_PROCESS_ATTACH) {
