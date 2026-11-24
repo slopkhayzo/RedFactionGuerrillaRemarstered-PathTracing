@@ -27,6 +27,8 @@
 namespace {
 
 HMODULE g_module = nullptr;
+// rfgrt_state(): 0 not started, 1 inactive (the log says why), 2 running.
+volatile LONG g_state = 0;
 
 std::wstring module_dir() {
     wchar_t path[MAX_PATH];
@@ -36,6 +38,7 @@ std::wstring module_dir() {
 }
 
 void init() {
+    InterlockedExchange(&g_state, 1);  // until the end
     const std::wstring dir = module_dir();
     Config cfg = load_config(dir + L"\\rfgrt.ini");
     session::init(cfg, dir);
@@ -156,6 +159,7 @@ void init() {
     if (!shader_dump::install(cfg)) LOG("shader dump hooks failed: no shaders saved");
     if (!hooks::enable_all()) return;
     session::start_watchdog();
+    InterlockedExchange(&g_state, 2);
     LOG("initialization complete");
 }
 
@@ -166,6 +170,10 @@ extern "C" __declspec(dllexport) void InitializeASI() {
     static LONG once = 0;
     if (InterlockedExchange(&once, 1) == 0) init();
 }
+
+// For a game that loads the plugin itself (OpenRFG64 VOM's renderer backend), after InitializeASI: 0 not started,
+// 1 inactive (the log says why), 2 running.
+extern "C" __declspec(dllexport) int rfgrt_state() { return int(g_state); }
 
 BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID reserved) {
     if (reason == DLL_PROCESS_ATTACH) {
