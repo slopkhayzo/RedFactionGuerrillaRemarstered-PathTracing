@@ -18,9 +18,11 @@ int build_index();
 // The running program is OpenRFG64: an x64 image whose CodeView record names OpenRFG.pdb.
 bool detected(const char* pdb_path, uint16_t machine);
 
-// Fills the values from the program's PDB. Returns how many names were not found or were ambiguous (their values
-// stay 0: rfg::fn/addr callers must treat a 0 RVA as missing); report gets one line per problem and a summary.
-int load(std::string& report);
+// Fills the values: from the names table written at build time beside the plugin (rfgrt.names in `plugin_dir`, by a
+// game that builds the plugin: src/shared/openrfg64_column.h), else from the program's PDB. Returns how many names
+// were not found or were ambiguous (their values stay 0: rfg::fn/addr callers must treat a 0 RVA as missing); report
+// gets one line per problem and a summary.
+int load(const std::wstring& plugin_dir, std::string& report);
 
 // While OpenRFG64 runs, the names table's entry of the function at `rva`: its name and parameters in the PDB, by which
 // a game with seams finds its seam (hooks/binding.h). Null otherwise.

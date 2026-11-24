@@ -59,9 +59,10 @@ void init() {
         return;
     }
     if (build == rfg::openrfg64::build_index()) {
-        // OpenRFG64-memtest: the values come from the program's own PDB, by name (game/openrfg64.cpp).
+        // OpenRFG64-memtest: the values come from the program's own PDB, by name, or from the names table a game that
+        // builds the plugin wrote beside it from that PDB (game/openrfg64.cpp).
         std::string report;
-        const int missing = rfg::openrfg64::load(report);
+        const int missing = rfg::openrfg64::load(dir, report);
         size_t start = 0;
         for (size_t end = report.find('\n'); end != std::string::npos; start = end + 1, end = report.find('\n', start))
             LOG("%s", report.substr(start, end - start).c_str());

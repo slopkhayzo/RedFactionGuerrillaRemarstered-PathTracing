@@ -14,7 +14,11 @@ int build_index() { return kBuildCount; }
 
 bool detected(const char* pdb_path, uint16_t machine) { return ::openrfg64::detected(pdb_path, machine); }
 
-int load(std::string& report) {
+int load(const std::wstring& plugin_dir, std::string& report) {
+    const ::openrfg64::List lists[] = {{kOpenRFG64Names, std::size(kOpenRFG64Names)}};
+    const std::wstring table = plugin_dir + L"\\rfgrt.names";
+    const int missing = ::openrfg64::load_table(lists, std::size(lists), rfg::base(), table.c_str(), nullptr, report);
+    if (missing >= 0) return missing;
     return ::openrfg64::load(kOpenRFG64Names, std::size(kOpenRFG64Names), rfg::base(), report);
 }
 

@@ -118,6 +118,13 @@ if(RFGRT_X64)
     target_compile_definitions(shaderpatch PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
     target_compile_options(shaderpatch PRIVATE /W4 /permissive- /utf-8 /Zi)
     target_link_libraries(shaderpatch PRIVATE d3d11 d3dcompiler)
+
+    # OpenRFG64's names table, for a game that builds the plugin and writes the table beside it after each link
+    # (tools/names_table/main.cpp, src/shared/openrfg64_column.h): rfgrt_names <OpenRFG.exe> <rfgrt.names>.
+    add_executable(rfgrt_names tools/names_table/main.cpp src/shared/openrfg64_column.cpp)
+    target_include_directories(rfgrt_names PRIVATE src/rfgrt src/shared)
+    target_compile_definitions(rfgrt_names PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
+    target_compile_options(rfgrt_names PRIVATE /W4 /permissive- /utf-8)
 endif()
 
 # --- the plugin --------------------------------------------------------------------------------------------------------
