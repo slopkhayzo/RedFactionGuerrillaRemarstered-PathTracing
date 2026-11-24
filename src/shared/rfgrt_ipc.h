@@ -146,10 +146,10 @@ struct Block {
     // shader, no material map), where neither the game's colour nor the radiance cache has it
     float terrain_albedo[3];
     int32_t window_tint;  // GI.WindowTint: the clear glass tints the sun's light through it (sun_tint.hlsl)
-    // Host.Dred: the core's device keeps Direct3D 12's removed-device data (the command lists'
+    // Host.Dred (OpenRFG64-memtest): the core's device keeps Direct3D 12's removed-device data (the command lists'
     // progress, the page fault's address), logged if the device is lost
     int32_t dred;
-    // Test.KillHostAtSeconds with the core in the game's process: 1 asks the core to remove its
+    // Test.KillHostAtSeconds with the core in the game's process (OpenRFG64-memtest): 1 asks the core to remove its
     // device (ID3D12Device5::RemoveDevice) as a lost device would be; the core sets 2 once it has
     volatile int32_t test_remove_device;
 

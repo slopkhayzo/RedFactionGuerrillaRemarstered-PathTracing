@@ -83,12 +83,11 @@ void release(T*& p) {
     p = nullptr;
 }
 
-// A lost device. A fence of a removed device reads UINT64_MAX, and every call on it fails or does
-// nothing. The core used to go on regardless: in a campaign session on the 64-bit port (OpenRFG64, the core in the
-// game's process, 2026-11-22) the device was lost after a 4 s hang, and the core kept recording a frame every 5 ms
-// into it, its allocations all failing, no frame answered, while the game's process grew by 11 GB in two minutes, to
-// unplayable paging. Now it logs why and stops (rfgrt_host.exe then exits); the plugin takes the game back to its own
-// lighting (Link::monitor_main).
+// OpenRFG64-memtest: a lost device. A fence of a removed device reads UINT64_MAX, and every call on it fails or does
+// nothing. The core used to go on regardless: in a campaign session (2026-11-22) the device was lost after a 4 s hang,
+// and the core kept recording a frame every 5 ms into it, its allocations all failing, no frame answered, while the
+// game's process grew by 11 GB in two minutes, to unplayable paging. Now it logs why and stops; the plugin then takes
+// the game back to its own lighting (Link::monitor_main).
 const char* removed_reason_text(HRESULT hr) {
     switch (hr) {
         case DXGI_ERROR_DEVICE_HUNG: return "the GPU hung on one of its commands (the driver reset it)";

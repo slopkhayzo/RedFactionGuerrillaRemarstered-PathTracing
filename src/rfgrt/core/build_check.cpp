@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "game/openrfg64.h"
 #include "game/rfg.h"
 
 namespace {
@@ -50,6 +51,15 @@ int identify_build(std::string& detail) {
         if (rfg::kBuilds[i].machine == machine && machine == kOwnMachine &&
             memcmp(&rsds->guid, rfg::kBuilds[i].pdb_guid, 16) == 0 && rsds->age == rfg::kBuilds[i].pdb_age)
             found = i;
+    // OpenRFG64-memtest: a 64-bit OpenRFG (its PDB, named in the CodeView record after the age, is read by name).
+    if (found < 0 && rsds && machine == kOwnMachine &&
+        rfg::openrfg64::detected(reinterpret_cast<const char*>(rsds + 1), machine)) {
+        char buf[400];
+        snprintf(buf, sizeof(buf), "OpenRFG64 build: machine %04X, pdb %s (addresses and layouts from it, by name)", machine,
+                 reinterpret_cast<const char*>(rsds + 1));
+        detail = buf;
+        return rfg::openrfg64::build_index();
+    }
     const rfg::BuildId* b = found >= 0 ? &rfg::kBuilds[found] : nullptr;
     char buf[320];
     snprintf(buf, sizeof(buf),

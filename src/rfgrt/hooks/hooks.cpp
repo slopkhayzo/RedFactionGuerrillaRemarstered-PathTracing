@@ -19,6 +19,10 @@ bool init() {
 }
 
 bool create(uint32_t rva, void* detour, void** original, const char* name) {
+    if (rva == 0) {  // OpenRFG64-memtest: a name the running build does not have (game/openrfg64.cpp)
+        LOG("hook %s: not in this build (no address): not hooked", name);
+        return false;
+    }
     MH_STATUS s = MH_CreateHook(rfg::addr(rva), detour, original);
     if (s != MH_OK) {
         LOG("hook %s (RVA %08X) failed: %s", name, rva, MH_StatusToString(s));

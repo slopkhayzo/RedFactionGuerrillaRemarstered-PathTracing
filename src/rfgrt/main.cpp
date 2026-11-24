@@ -11,6 +11,7 @@
 #include "core/gameloop.h"
 #include "core/log.h"
 #include "core/session.h"
+#include "game/openrfg64.h"
 #include "game/rfg.h"
 #include "harness/shader_dump.h"
 #include "hooks/hooks.h"
@@ -50,6 +51,15 @@ void init() {
     if (build < 0) {
         LOG("unknown rfg.exe build: plugin stays inactive");
         return;
+    }
+    if (build == rfg::openrfg64::build_index()) {
+        // OpenRFG64-memtest: the values come from the program's own PDB, by name (game/openrfg64.cpp).
+        std::string report;
+        const int missing = rfg::openrfg64::load(report);
+        size_t start = 0;
+        for (size_t end = report.find('\n'); end != std::string::npos; start = end + 1, end = report.find('\n', start))
+            LOG("%s", report.substr(start, end - start).c_str());
+        if (missing > 0) LOG("OpenRFG64: %d names missing: the hooks on them stay off", missing);
     }
     rfg::select_build(build);  // before anything uses a game address or offset
     if (!cfg.enabled) {

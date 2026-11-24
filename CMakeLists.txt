@@ -138,6 +138,8 @@ add_library(rfgrt SHARED
     src/rfgrt/core/build_check.cpp
     src/rfgrt/core/gameloop.cpp
     src/rfgrt/game/rfg.cpp
+    src/rfgrt/game/openrfg64.cpp
+    src/shared/openrfg64_column.cpp
     src/rfgrt/hooks/hooks.cpp
     src/rfgrt/harness/screenshot.cpp
     src/rfgrt/harness/shader_dump.cpp

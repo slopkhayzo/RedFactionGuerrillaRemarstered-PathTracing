@@ -55,7 +55,7 @@ bool dev_view(uint32_t handle, ID3D11ShaderResourceView** out) {
         void* tex = nullptr;
         rfg::fn<void**(__cdecl*)(void**, uint32_t)>(rfg::rva::get_dev_texture)(&tex, handle);
         if (!tex) return false;
-        *out = *reinterpret_cast<ID3D11ShaderResourceView**>(static_cast<uint8_t*>(tex) + 0x18);
+        *out = *reinterpret_cast<ID3D11ShaderResourceView**>(static_cast<uint8_t*>(tex) + rfg::off::TextureData_pShaderView);
         return *out != nullptr;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;

@@ -739,7 +739,7 @@ void Link::kill_for_test() {
         LOG("link: ending rfgrt_host.exe as a crash would (test)");
         TerminateProcess(static_cast<HANDLE>(process_), 9);
     } else if (core_thread_ && block_) {
-        // The core in this process loses its device instead (what a GPU hang does to it).
+        // OpenRFG64-memtest: the core in this process loses its device instead (what a GPU hang does to it).
         LOG("link: the core's device removed as a lost device would be (test)");
         block_->test_remove_device = 1;
     }

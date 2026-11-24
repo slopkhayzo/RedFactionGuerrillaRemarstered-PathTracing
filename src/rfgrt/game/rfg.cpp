@@ -16,10 +16,14 @@ uintptr_t base() {
 
 int build() { return g_build; }
 
-const char* build_name() { return g_build >= 0 ? kBuilds[g_build].name : "unknown"; }
+const char* build_name() {
+    return g_build >= kBuildCount ? "OpenRFG64" : g_build >= 0 ? kBuilds[g_build].name : "unknown";
+}
 
 void select_build(int index) {
-    for (const RvaEntry& e : kRvaTable) *e.value = e.in_build[index];
+    // OpenRFG64-memtest: index kBuildCount is OpenRFG64, whose values game/openrfg64.cpp has filled from its PDB.
+    if (index < kBuildCount)
+        for (const RvaEntry& e : kRvaTable) *e.value = e.in_build[index];
     g_build = index;
 }
 
