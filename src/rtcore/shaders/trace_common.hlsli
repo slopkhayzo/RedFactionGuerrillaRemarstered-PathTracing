@@ -57,6 +57,8 @@ cbuffer Frame : register(b0) {
                           // (Reflections.GlassReflectance), y 1 when they are on (Reflections.Glass)
     float4 probe;         // xy: where the probe aims (probe.hlsl), fractions of the screen (Test.ProbePixel)
     float4 terrain;       // rgb: the albedo of a surface whose material is not known, the terrain (GI.TerrainAlbedo)
+    float4 upscale;       // DLSS (dlss.h): xy the GI's render size (0: the frame's), zw the sample's offset from each of its
+                          // pixels' centres (its pixels, y down); gi_size, gi_source
 };
 
 static const float PI = 3.14159265;
@@ -98,6 +100,18 @@ bool surface_at(int2 px, out float3 p, out float3 n) {
     n = normalize(cross(dy, dx));
     if (dot(n, cam_origin.xyz - p) < 0.0) n = -n;
     return true;
+}
+
+// The GI's size: the frame's, or with DLSS upscaling (a mode below DLAA) its render size, the top-left part of the
+// GI's textures.
+uint2 gi_size() { return upscale.x > 0.0 ? uint2(upscale.xy) : size; }
+
+// The frame's pixel a GI pixel traces from: itself, or with DLSS upscaling the one under the pixel's jittered point
+// (rr_guides.hlsl picks the same).
+int2 gi_source(uint2 q) {
+    if (upscale.x <= 0.0) return int2(q);
+    const float2 at = (float2(q) + 0.5 + upscale.zw) * (float2(size) / upscale.xy);
+    return clamp(int2(floor(at)), int2(0, 0), int2(size) - 1);
 }
 
 uint hash(uint x) {  // lowbias32

@@ -72,6 +72,8 @@ struct Config {
                                   // the ambient's brightness, 2 the drawn sky as it is (about 4x darker); between: blends
     int gi_denoiser = 2;          // the GI's denoiser: 0 one 7x7 pass, 1 an edge-avoiding wavelet over ~61 x 61 pixels, 2 DLSS
                                   // Ray Reconstruction (NVIDIA RTX; elsewhere, and in builds without the SDK, the wavelet)
+    int dlss_mode = 1;            // DLSS.Mode, with Denoiser=2: 0 off (the wavelet), 1 DLAA, 2 quality, 3 balanced,
+                                  // 4 performance, 5 ultra performance (the GI traced at a share of the frame, upscaled)
     bool gi_cache = true;         // the world radiance cache: the light of surfaces seen on screen, for rays hitting them later
     bool gi_glass = true;         // the game's plain glass (windows, shards) lit by the path tracer: its shadow, the light
                                   // around it (patch/glass.h; 0: the glass's own light, no shadow)
@@ -133,6 +135,8 @@ struct Config {
                                   // own lighting and shadows, for comparing (the core keeps running; 0: none)
     std::wstring input_script;    // scripted mouse and keyboard input (test/input_script.h)
     int time_of_day = -1;         // the game clock set to this hour once gameplay starts, and held there (-1: the save's)
+    int test_dlss_cycle_s = 0;    // Test.DlssCycle: every this many gameplay seconds the next DLSS mode (1 to 5, then 0), as
+                                  // a game's DLSS setting changes it while playing (0: never)
     std::string wrecking_crew;    // Test.WreckingCrew: main menu -> Wrecking Crew -> this map (its file name, as
                                   // wcdlc4, or its index; "current": the menu's) -> the match, instead of a save
 };

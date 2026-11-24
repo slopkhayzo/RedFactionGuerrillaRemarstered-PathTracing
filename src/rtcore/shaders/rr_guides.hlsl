@@ -5,7 +5,9 @@
 //     its direction;
 //   - the world normal from the depth, facing the camera, with roughness 1 in w (a diffuse signal);
 //   - a white albedo (black for the sky): the irradiance has no texture in it, so none can be smoothed away.
-// The specular albedo is a black texture made once.
+// The specular albedo is a black texture made once. With DLSS upscaling (a mode below DLAA) the guides are at the GI's
+// render size, each from the frame's pixel the GI's rays traced from (trace_common.hlsli gi_source), the motion in
+// render pixels.
 
 Texture2D<float> depth : register(t0);
 RWTexture2D<float> rr_depth : register(u0);
@@ -27,6 +29,8 @@ cbuffer Frame : register(b0) {
     uint4 shadow;
     float4 reproject[4];  // render-offset space now -> the previous frame's clip space (row-vector)
     float4 prev;
+    float4 gi_lighting[14];  // the GI constants this pass does not read (rtcore.cpp GiConstants: ambient .. terrain)
+    float4 upscale;          // DLSS: xy the GI's render size (0: the frame's), zw the sample's offset (trace_common.hlsli)
 };
 
 float3 view_ray(int2 p) {
@@ -55,8 +59,11 @@ bool previous_pixel(float3 p, out float2 pix) {
 
 [numthreads(8, 8, 1)]
 void main(uint3 id : SV_DispatchThreadID) {
-    if (any(id.xy >= size)) return;
-    const int2 px = int2(id.xy);
+    // the guide's pixel: the frame's, or with DLSS upscaling one of the render size's (as gi_source)
+    const bool up = upscale.x > 0.0;
+    if (any(id.xy >= (up ? uint2(upscale.xy) : size))) return;
+    const float2 scale = up ? float2(size) / upscale.xy : float2(1.0, 1.0);  // frame pixels per guide pixel
+    const int2 px = up ? clamp(int2(floor((float2(id.xy) + 0.5 + upscale.zw) * scale)), int2(0, 0), int2(size) - 1) : int2(id.xy);
     const float2 here = float2(px) + 0.5;
     const float z0 = view_depth(px);
     const float3 ray = view_ray(px);
@@ -66,7 +73,7 @@ void main(uint3 id : SV_DispatchThreadID) {
         rr_depth[id.xy] = 1e6;
         rr_albedo[id.xy] = float4(0.0, 0.0, 0.0, 0.0);
         rr_normal[id.xy] = float4(-dir, 1.0);
-        rr_motion[id.xy] = previous_pixel(cam_origin.xyz + dir * 1e5, then) ? then - here : float2(0.0, 0.0);
+        rr_motion[id.xy] = previous_pixel(cam_origin.xyz + dir * 1e5, then) ? (then - here) / scale : float2(0.0, 0.0);
         return;
     }
     const float3 p0 = ray * z0;  // camera-relative
@@ -83,5 +90,5 @@ void main(uint3 id : SV_DispatchThreadID) {
     rr_depth[id.xy] = z0;
     rr_albedo[id.xy] = float4(1.0, 1.0, 1.0, 1.0);
     rr_normal[id.xy] = float4(n, 1.0);
-    rr_motion[id.xy] = previous_pixel(cam_origin.xyz + p0, then) ? then - here : float2(0.0, 0.0);
+    rr_motion[id.xy] = previous_pixel(cam_origin.xyz + p0, then) ? (then - here) / scale : float2(0.0, 0.0);
 }

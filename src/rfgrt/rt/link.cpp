@@ -59,6 +59,12 @@ Link& core_link() {
     return link;
 }
 
+void Link::set_dlss_mode(int mode) {
+    std::lock_guard<std::mutex> lock(start_mutex_);  // stop() frees the block under it
+    opt_.dlss_mode = mode;
+    if (block_) InterlockedExchange(reinterpret_cast<volatile LONG*>(&block_->dlss_mode), mode);
+}
+
 bool Link::start(ID3D11Device* device) {
     if (started_.load()) return true;
     std::lock_guard<std::mutex> lock(start_mutex_);
@@ -164,6 +170,8 @@ bool Link::create_region() {
     block_->gi_sky = opt_.gi_sky;
     block_->gi_cache = opt_.gi_cache ? 1 : 0;
     block_->gi_denoiser = opt_.gi_denoiser;
+    block_->dlss_mode = opt_.dlss_mode;
+    block_->host_dlss_mode = -1;
     block_->fog_enabled = opt_.fog && opt_.gi_rays > 0 ? 1 : 0;
     block_->fog_sun_share = opt_.fog_sun_share;
     block_->fog_anisotropy = opt_.fog_anisotropy;

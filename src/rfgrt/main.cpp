@@ -32,6 +32,10 @@ namespace {
 HMODULE g_module = nullptr;
 // rfgrt_state(): 0 not started, 1 inactive (the log says why), 2 running.
 volatile LONG g_state = 0;
+// DLSS's mode as the game sets it (rfgrt_set_dlss_mode), in place of rfgrt.ini's DLSS.Mode; -1: rfgrt.ini's.
+volatile LONG g_dlss_mode = -1;
+
+int clamp_dlss_mode(int mode) { return mode < 0 ? 0 : mode > 5 ? 5 : mode; }
 
 std::wstring module_dir() {
     wchar_t path[MAX_PATH];
@@ -112,6 +116,11 @@ void init() {
     link.gi_cache = cfg.gi_cache;
     link.gi_glass = cfg.gi_glass;
     link.gi_denoiser = cfg.gi_denoiser < 0 ? 0 : cfg.gi_denoiser > 2 ? 2 : cfg.gi_denoiser;
+    {
+        const LONG game = InterlockedCompareExchange(&g_dlss_mode, 0, 0);
+        link.dlss_mode = game >= 0 ? int(game) : clamp_dlss_mode(cfg.dlss_mode);
+        if (link.gi_denoiser == 2) LOG("DLSS: mode %d (%s)", link.dlss_mode, game >= 0 ? "the game's setting" : "DLSS.Mode");
+    }
     link.fog = cfg.fog_enabled && cfg.gi_enabled;
     link.fog_sun_share = float(cfg.fog_sun_share < 0.0 ? 0.0 : cfg.fog_sun_share > 1.0 ? 1.0 : cfg.fog_sun_share);
     link.fog_anisotropy = float(cfg.fog_anisotropy < -0.9 ? -0.9 : cfg.fog_anisotropy > 0.9 ? 0.9 : cfg.fog_anisotropy);
@@ -237,6 +246,17 @@ extern "C" __declspec(dllexport) int rfgrt_set_active(int on) {
             switch_off();
     }
     return want ? 1 : 0;
+}
+
+// For a game with a DLSS setting of its own (OpenRFG64 VOM's DLSS row): the mode, in place of rfgrt.ini's DLSS.Mode
+// (0 off, 1 DLAA, 2 quality, 3 balanced, 4 performance, 5 ultra performance; rfgrt_ipc::Block::dlss_mode). Before
+// InitializeASI, or any time after: the running core switches at its next frame, and later cores start with it.
+extern "C" __declspec(dllexport) void rfgrt_set_dlss_mode(int mode) {
+    mode = clamp_dlss_mode(mode);
+    const LONG before = InterlockedExchange(&g_dlss_mode, mode);
+    if (g_state == 0) return;  // init() takes it
+    rtlink::core_link().set_dlss_mode(mode);
+    if (before != mode) LOG("DLSS: mode %d (the game's setting)", mode);
 }
 
 // For a game with seams for the plugin's hooks (OpenRFG64 VOM's renderer backend; hooks/binding.h): before

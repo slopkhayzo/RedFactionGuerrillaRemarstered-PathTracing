@@ -320,6 +320,10 @@ struct GiConstants {
     float glass[4];      // the clear glass's reflections: x its reflectance at normal incidence; y 1 when they are on
     float probe[4];      // xy: where the probe aims, fractions of the screen (Test.ProbePixel)
     float terrain[4];    // rgb: the albedo of a surface whose material is not known, the terrain (GI.TerrainAlbedo)
+    // DLSS (dlss.h) upscaling: xy the render size the GI's rays and Ray Reconstruction's guides run at (0: the frame's),
+    // the top-left part of their textures; zw the sample's offset from each render pixel's centre (render pixels, y down):
+    // each traces from the frame's pixel under that point
+    float upscale[4];
 };
 static_assert(sizeof(GiConstants) <= 512, "a 512-byte slot a ring slot");
 
@@ -337,6 +341,16 @@ void mul44(const float* a, const float* b, float* out) {
         for (int c = 0; c < 4; ++c)
             out[r * 4 + c] = a[r * 4 + 0] * b[0 * 4 + c] + a[r * 4 + 1] * b[1 * 4 + c] + a[r * 4 + 2] * b[2 * 4 + c] +
                              a[r * 4 + 3] * b[3 * 4 + c];
+}
+
+// The Halton sequence's i-th point in base `base` (i >= 1), in [0, 1): DLSS's sub-pixel jitter (bases 2 and 3).
+float halton(uint32_t i, uint32_t base) {
+    float f = 1.0f, r = 0.0f;
+    for (; i > 0; i /= base) {
+        f /= float(base);
+        r += f * float(i % base);
+    }
+    return r;
 }
 
 // The descriptor heap: groups of the frame textures, one table each (w: the history written this frame, 0 or 1).
@@ -539,6 +553,11 @@ int run(const RunParams& p) {
     int32_t rrGeneration = -1;  // the frame textures Ray Reconstruction last ran with (new ones: no history)
     LARGE_INTEGER rrLast{}, rrFreq{};
     uint64_t rrFrames = 0;
+    // DLSS (dlss.h, Block::dlss_mode): the mode the frames are queued with (-1 before the first), what the log last said
+    int dlssMode = -1;
+    int dlssLoggedMode = -2;
+    unsigned dlssLoggedWidth = 0, dlssLoggedHeight = 0;
+    bool dlssReset = false;  // Ray Reconstruction's history starts over (a new mode)
     int64_t probeFrame[kRing]{};
     std::vector<uint32_t> probeInstances[kRing];
     int32_t probeSeen = b->probe_request;
@@ -1319,6 +1338,21 @@ int run(const RunParams& p) {
                 }
             }
         }
+        // A new DLSS mode (Block::dlss_mode: DLSS.Mode, or the game's DLSS row while it runs): once every frame queued
+        // with the previous one is done, as Ray Reconstruction is made again for it (the one they used is released).
+        {
+            const int32_t want = b->dlss_mode < dlss::kModeOff ? dlss::kModeOff : b->dlss_mode >= dlss::kModeCount ? dlss::kModeCount - 1 : b->dlss_mode;
+            if (next && want != dlssMode) {
+                if (dlssMode >= 0 && sig > 0 && done < UINT64(sig)) {
+                    waitFor = UINT64(sig);
+                    next = 0;
+                } else {
+                    dlssReset = dlssMode >= 0;
+                    dlssMode = want;
+                    InterlockedExchange(reinterpret_cast<volatile LONG*>(&b->host_dlss_mode), dlssMode);
+                }
+            }
+        }
         if (next && set.generation == 0) {  // no textures yet: nothing to answer this frame with
             if (snapshots) n = next;  // its scene is skipped
             ++skippedNoSet;
@@ -1775,9 +1809,44 @@ int run(const RunParams& p) {
                             g.fog3[2] = fogHistory && historyValid ? 1.0f : 0.0f;
                             g.fog3[3] = kFogFrames;
                         }
+                        // DLSS (dlss.h): Ray Reconstruction denoises the GI unless the mode is off; below DLAA the rays
+                        // and its guides run at the mode's render size (the top-left part of their textures), each of
+                        // its pixels tracing from the frame's pixel under a jittered point of it (Halton 2, 3: about 8
+                        // points per frame pixel it covers), and Ray Reconstruction upscales the light to the frame's size.
+                        const bool rrUse = rrOn && set.rr_out && b->gi_denoiser == 2 && dlssMode >= dlss::kModeDlaa;
+                        unsigned rw = set.width, rh = set.height;
+                        if (rrUse) dlss::render_size(set.width, set.height, dlssMode, rw, rh);
+                        const bool upscaling = rw < set.width || rh < set.height;
+                        float jx = 0.0f, jy = 0.0f;
+                        if (upscaling) {
+                            const float sx = float(set.width) / float(rw), sy = float(set.height) / float(rh);
+                            uint32_t phases = uint32_t(std::ceil(8.0f * sx * sy));
+                            if (phases < 8) phases = 8;
+                            const uint32_t i = 1 + uint32_t(uint64_t(next) % phases);
+                            // the point (Halton, in [0, 1) of the render pixel) moved to the centre of the frame's pixel
+                            // under it: exact for every render pixel at a whole scale (performance, ultra performance)
+                            jx = (std::floor(halton(i, 2) * sx) + 0.5f) / sx - 0.5f;
+                            jy = (std::floor(halton(i, 3) * sy) + 0.5f) / sy - 0.5f;
+                            g.upscale[0] = float(rw);
+                            g.upscale[1] = float(rh);
+                            g.upscale[2] = jx;
+                            g.upscale[3] = jy;
+                        }
+                        if (rrUse && (dlssMode != dlssLoggedMode || rw != dlssLoggedWidth || rh != dlssLoggedHeight)) {
+                            dlssLoggedMode = dlssMode;
+                            dlssLoggedWidth = rw;
+                            dlssLoggedHeight = rh;
+                            logf("DLSS %s: the GI's rays at %ux%u of %ux%u (%.0f %%)%s", dlss::mode_name(dlssMode), rw, rh, set.width,
+                                 set.height, 100.0 * double(rw) / double(set.width),
+                                 upscaling ? ", jittered, Ray Reconstruction upscaling them" : "");
+                        } else if (!rrUse && rrOn && set.rr_out && b->gi_denoiser == 2 && dlssLoggedMode != dlss::kModeOff) {
+                            dlssLoggedMode = dlss::kModeOff;
+                            logf("DLSS off: the GI's own filter at %ux%u", set.width, set.height);
+                        }
                         memcpy(giCbCpu + uint64_t(k) * 512, &g, sizeof(g));
                         lastGi = g;
                         const UINT gx = (set.width + 7) / 8, gy = (set.height + 7) / 8;
+                        const UINT rgx = (rw + 7) / 8, rgy = (rh + 7) / 8;  // the GI's rays and the guides
                         cl->SetComputeRootSignature(giRs);
                         cl->SetComputeRootShaderResourceView(1, tlas.address(k));
                         cl->SetComputeRootShaderResourceView(2, tlas.instance_table(k));
@@ -1830,7 +1899,7 @@ int run(const RunParams& p) {
                         cl->EndQuery(qheap, D3D12_QUERY_TYPE_TIMESTAMP, UINT(k * kStamps + 9));
                         cl->SetPipelineState(giTracePso);
                         cl->SetComputeRootDescriptorTable(0, table(kTableGiTrace));
-                        cl->Dispatch(gx, gy, 1);
+                        cl->Dispatch(rgx, rgy, 1);
                         cl->EndQuery(qheap, D3D12_QUERY_TYPE_TIMESTAMP, UINT(k * kStamps + 10));
                         partsStamped = true;
                         if (glassPso && glassFilterPso && set.glass && set.glass_raw) {
@@ -1909,7 +1978,7 @@ int run(const RunParams& p) {
                         cl->EndQuery(qheap, D3D12_QUERY_TYPE_TIMESTAMP, UINT(k * kStamps + 8));
                         fogStamped = true;
                         bool rrDone = false;
-                        if (rrOn && set.rr_out && b->gi_denoiser == 2) {
+                        if (rrUse) {
                             // DLSS Ray Reconstruction (dlss.h) denoises this frame's traced irradiance with its guide
                             // images, in place of the temporal and wavelet passes. The frame it is (re)created at, or a
                             // failure, runs those instead.
@@ -1921,7 +1990,7 @@ int run(const RunParams& p) {
                             cl->SetComputeRootDescriptorTable(0, table(kTableRrGuides));
                             cl->SetComputeRootConstantBufferView(1, giCb->GetGPUVirtualAddress() + uint64_t(k) * 512);
                             cl->SetPipelineState(rrGuidesPso);
-                            cl->Dispatch(gx, gy, 1);
+                            cl->Dispatch(rgx, rgy, 1);
                             const D3D12_RESOURCE_BARRIER r2[4] = {transition(set.rr_depth, uav, srv), transition(set.rr_motion, uav, srv),
                                                                   transition(set.rr_normal, uav, srv), transition(set.rr_albedo, uav, srv)};
                             cl->ResourceBarrier(4, r2);
@@ -1941,11 +2010,17 @@ int run(const RunParams& p) {
                             rri.depth = set.rr_depth;
                             rri.motion = set.rr_motion;
                             rri.output = set.rr_out;
-                            rri.width = set.width;
-                            rri.height = set.height;
+                            rri.width = rw;
+                            rri.height = rh;
+                            rri.out_width = set.width;
+                            rri.out_height = set.height;
+                            rri.mode = dlssMode;
+                            rri.jitter_x = -jx;  // where the geometry moved (dlss.h)
+                            rri.jitter_y = -jy;
                             rri.world_to_view = worldToView;
                             rri.view_to_clip = h->camera.projection;
-                            rri.reset = !historyValid || set.generation != rrGeneration;
+                            rri.reset = !historyValid || set.generation != rrGeneration || dlssReset;
+                            dlssReset = false;
                             rri.frame_ms = float(ms < 1.0 ? 1.0 : ms > 100.0 ? 100.0 : ms);
                             rrGeneration = set.generation;
                             const bool evaluated = dlss::evaluate(cl, rri);
@@ -1984,7 +2059,9 @@ int run(const RunParams& p) {
                                 cl->ResourceBarrier(1, &r6);
                             }
                         }
-                        if (!rrDone) {
+                        // Without Ray Reconstruction's answer the GI's own passes run, at the frame's size; a frame traced
+                        // at a smaller one (its feature made at this frame, for a new mode) keeps the last irradiance.
+                        if (!rrDone && !upscaling) {
                             const D3D12_RESOURCE_BARRIER giToTemporal[2] = {
                                 transition(set.gi_traced, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE),
                                 transition(set.gi_history[1 - histOut], D3D12_RESOURCE_STATE_UNORDERED_ACCESS,

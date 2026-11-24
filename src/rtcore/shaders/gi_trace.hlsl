@@ -3,15 +3,17 @@
 // sky, one that hits a surface sees the light that surface sends back (trace_common.hlsli: what the game drew there,
 // else a diffuse surface under the sky and the sun). The irradiance goes to `traced` in the game's units: an open
 // surface facing up gets the game's own ambient colour, so that the patched shaders, which use it as their ambient,
-// keep the game's balance. Passes 2 and 3 average it over frames and neighbours.
+// keep the game's balance. Passes 2 and 3 average it over frames and neighbours (or DLSS Ray Reconstruction, which with
+// a mode below DLAA gets the rays at its render size, each pixel tracing from the frame's pixel under a jittered point
+// of it: gi_source, and upscales them).
 
 #include "trace_common.hlsli"
 
 [numthreads(8, 8, 1)]
 void main(uint3 id : SV_DispatchThreadID) {
-    if (any(id.xy >= size)) return;
+    if (any(id.xy >= gi_size())) return;
     float3 p, n;
-    if (!surface_at(int2(id.xy), p, n)) {
+    if (!surface_at(gi_source(id.xy), p, n)) {
         traced[id.xy] = float4(0.0, 0.0, 0.0, 0.0);
         return;
     }
