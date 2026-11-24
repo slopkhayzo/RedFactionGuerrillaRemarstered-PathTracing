@@ -74,6 +74,8 @@ struct Config {
                                   // Ray Reconstruction (NVIDIA RTX; elsewhere, and in builds without the SDK, the wavelet)
     int dlss_mode = 1;            // DLSS.Mode, with Denoiser=2: 0 off (the wavelet), 1 DLAA, 2 quality, 3 balanced,
                                   // 4 performance, 5 ultra performance (the GI traced at a share of the frame, upscaled)
+    bool fg_enabled = false;      // FrameGeneration.Enabled: DLSS Frame Generation (64-bit; present/presenter.h)
+    bool fg_presenter = false;    // FrameGeneration.Presenter: the presenter without generation (a test of its presents)
     bool gi_cache = true;         // the world radiance cache: the light of surfaces seen on screen, for rays hitting them later
     bool gi_glass = true;         // the game's plain glass (windows, shards) lit by the path tracer: its shadow, the light
                                   // around it (patch/glass.h; 0: the glass's own light, no shadow)
@@ -137,6 +139,8 @@ struct Config {
     int time_of_day = -1;         // the game clock set to this hour once gameplay starts, and held there (-1: the save's)
     int test_dlss_cycle_s = 0;    // Test.DlssCycle: every this many gameplay seconds the next DLSS mode (1 to 5, then 0), as
                                   // a game's DLSS setting changes it while playing (0: never)
+    int test_fg_cycle_s = 0;      // Test.FrameGenerationCycle: every this many gameplay seconds frame generation switched
+                                  // (on, off, ...), as a game's setting does while playing (0: never)
     std::string wrecking_crew;    // Test.WreckingCrew: main menu -> Wrecking Crew -> this map (its file name, as
                                   // wcdlc4, or its index; "current": the menu's) -> the match, instead of a save
 };

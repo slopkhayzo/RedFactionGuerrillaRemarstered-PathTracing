@@ -16,6 +16,7 @@
 #include "game/rfg.h"
 #include "harness/screenshot.h"
 #include "hooks/hooks.h"
+#include "present/presenter.h"
 #include "rt/link.h"
 #include "test/input_script.h"
 
@@ -247,6 +248,15 @@ void on_frame(int state) {
         const int mode = dlss_step % 6;  // 1 2 3 4 5 0 1 2 ...
         rtlink::core_link().set_dlss_mode(mode);
         LOG("automation: DLSS mode %d at %.1f s of gameplay (Test.DlssCycle)", mode, gameplay_s);
+    }
+    // Test.FrameGenerationCycle: frame generation switched every so many gameplay seconds, as a game's setting does while
+    // playing (the presenter takes over the game's presents, then gives them back)
+    static int fg_step = 0;
+    if (g_cfg.test_fg_cycle_s > 0 && state == GS_GAMEPLAY && gameplay_s >= double(g_cfg.test_fg_cycle_s) * (fg_step + 1)) {
+        ++fg_step;
+        const bool on = fg_step % 2 == 0;  // (it starts as the settings say: the first switch turns it off)
+        presenter::set_wanted(on);
+        LOG("automation: frame generation %s at %.1f s of gameplay (Test.FrameGenerationCycle)", on ? "on" : "off", gameplay_s);
     }
     if (g_next_shot < g_cfg.shots_at.size() && state == GS_GAMEPLAY && gameplay_s >= g_cfg.shots_at[g_next_shot]) {
         wchar_t name[64];

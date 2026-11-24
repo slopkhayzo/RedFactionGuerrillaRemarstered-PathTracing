@@ -19,3 +19,4 @@ __pycache__/
 # Third-party binaries: downloaded, not kept here (third_party/README.md)
 /third_party/ultimate-asi-loader/dinput8.dll
 /third_party/dlss/
+/third_party/streamline/

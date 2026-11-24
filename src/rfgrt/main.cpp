@@ -21,6 +21,7 @@
 #include "mirror/geometry.h"
 #include "mirror/instances.h"
 #include "mirror/textures.h"
+#include "present/presenter.h"
 #include "render/gi.h"
 #include "render/lights.h"
 #include "render/seam.h"
@@ -34,6 +35,8 @@ HMODULE g_module = nullptr;
 volatile LONG g_state = 0;
 // DLSS's mode as the game sets it (rfgrt_set_dlss_mode), in place of rfgrt.ini's DLSS.Mode; -1: rfgrt.ini's.
 volatile LONG g_dlss_mode = -1;
+// Frame generation as the game sets it (rfgrt_set_frame_generation), in place of FrameGeneration.Enabled; -1: rfgrt.ini's.
+volatile LONG g_frame_generation = -1;
 
 int clamp_dlss_mode(int mode) { return mode < 0 ? 0 : mode > 5 ? 5 : mode; }
 
@@ -170,6 +173,12 @@ void init() {
     }
     session::add_flush_handler(&instances::report);
     if (!shader_dump::install(cfg)) LOG("shader dump hooks failed: no shaders saved");
+    {
+        const LONG game = InterlockedCompareExchange(&g_frame_generation, 0, 0);
+        Config fg = cfg;
+        if (game >= 0) fg.fg_enabled = game != 0;  // the game's setting (rfgrt_set_frame_generation) before its start
+        if (!presenter::install(fg)) LOG("presenter hooks failed: no frame generation");
+    }
     if (!hooks::enable_all()) return;
     if (hooks::seamed() > 0) LOG("hooks: %d on the game's seams", hooks::seamed());
     if (active::switchable())
@@ -257,6 +266,14 @@ extern "C" __declspec(dllexport) void rfgrt_set_dlss_mode(int mode) {
     if (g_state == 0) return;  // init() takes it
     rtlink::core_link().set_dlss_mode(mode);
     if (before != mode) LOG("DLSS: mode %d (the game's setting)", mode);
+}
+
+// For a game with a frame generation setting of its own (OpenRFG64 VOM's FRAME GENERATION row): DLSS Frame Generation on
+// (1) or off (0), in place of rfgrt.ini's FrameGeneration.Enabled. Before InitializeASI, or any time after: from the next
+// present (present/presenter.h; 64-bit builds).
+extern "C" __declspec(dllexport) void rfgrt_set_frame_generation(int on) {
+    InterlockedExchange(&g_frame_generation, on ? 1 : 0);
+    if (g_state != 0) presenter::set_wanted(on != 0);
 }
 
 // For a game with seams for the plugin's hooks (OpenRFG64 VOM's renderer backend; hooks/binding.h): before
