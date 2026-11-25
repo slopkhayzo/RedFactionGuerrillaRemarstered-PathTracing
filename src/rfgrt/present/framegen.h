@@ -25,13 +25,16 @@ struct Camera {
     bool reset = false;           // no usable previous frame (the first, a cut, a new size)
 };
 
-// What a frame gives DLSS-G, all at the frame's size, on the presenter's device.
+// What a frame gives DLSS-G, on the presenter's device: the frame before the HUD and the UI layer at the frame's size, the
+// depth and the motion at the depth's (the frame's, or the game's smaller render size while it upscales its frame with
+// DLSS Super Resolution: DLSS-G takes them at that size).
 struct Inputs {
     ID3D12Resource* depth = nullptr;    // R32F: the game's hardware depth (non-pixel shader resource state)
     ID3D12Resource* motion = nullptr;   // RG16F: pixels, previous = current + motion (unordered access state)
     ID3D12Resource* hudless = nullptr;  // the frame before the HUD (non-pixel shader resource state)
     ID3D12Resource* ui = nullptr;       // the UI layer, colour and alpha (unordered access state)
     unsigned width = 0, height = 0;
+    unsigned depth_width = 0, depth_height = 0;  // 0: the frame's
 };
 
 // Once, as the presenter sets up: Streamline (sl.interposer.dll from the plugin's folder, checked for NVIDIA's signature)

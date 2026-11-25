@@ -121,6 +121,9 @@ struct State {
     ComPtr<ID3D11Texture2D> depth11[kBuffers];
     ComPtr<ID3D12Resource> depth12[kBuffers];
     ComPtr<ID3D11RenderTargetView> depth_rtv[kBuffers];
+    // the depth's size (the scene's: the frame's, or smaller while the game renders its scene for DLSS and upscales it);
+    // the motion is made at that size too
+    UINT depth_width[kBuffers] = {}, depth_height[kBuffers] = {};
     UINT64 scene_for = UINT64_MAX;
     framegen::Camera camera{};
     float depth_max = 1.0f;
@@ -654,13 +657,30 @@ void capture_scene(uint8_t* scene_renderer, uint8_t* camera) {
     back_buffer->GetDesc(&desc);
     const DXGI_FORMAT format = chain_format(desc.Format);
     const UINT slot = UINT(s.frames % kBuffers);
+    // the depth at its own size: the frame's, or the scene's smaller one while the game upscales its frame with DLSS
+    UINT depth_width = desc.Width, depth_height = desc.Height;
+    {
+        ComPtr<ID3D11Resource> resource;
+        ComPtr<ID3D11Texture2D> texture;
+        depth_srv->GetResource(&resource);
+        if (resource && SUCCEEDED(resource.As(&texture))) {
+            D3D11_TEXTURE2D_DESC d{};
+            texture->GetDesc(&d);
+            if (d.Width && d.Height && d.Width <= desc.Width && d.Height <= desc.Height) {
+                depth_width = d.Width;
+                depth_height = d.Height;
+            }
+        }
+    }
     if (format == DXGI_FORMAT_UNKNOWN || desc.SampleDesc.Count != 1 ||
         !ensure_shared(s.hudless11[slot], s.hudless12[slot], desc.Width, desc.Height, format, "frame before the HUD") ||
-        !ensure_shared(s.depth11[slot], s.depth12[slot], desc.Width, desc.Height, DXGI_FORMAT_R32_FLOAT, "depth", &s.depth_rtv[slot]))
+        !ensure_shared(s.depth11[slot], s.depth12[slot], depth_width, depth_height, DXGI_FORMAT_R32_FLOAT, "depth", &s.depth_rtv[slot]))
         return;
     if (s.allocator_done[slot]) s.immediate4->Wait(s.fence11.Get(), s.allocator_done[slot]);
     s.immediate->CopyResource(s.hudless11[slot].Get(), back_buffer.Get());
-    copy_depth(depth_srv, s.depth_rtv[slot].Get(), desc.Width, desc.Height);
+    copy_depth(depth_srv, s.depth_rtv[slot].Get(), depth_width, depth_height);
+    s.depth_width[slot] = depth_width;
+    s.depth_height[slot] = depth_height;
     read_camera(camera, desc.Width, desc.Height);
     if (!s.prev_valid) return;  // (a singular projection)
     s.depth_max = 1.0f - rfg::global<float>(rfg::rva::RL_reserved_landmark_depth_range);
@@ -675,7 +695,7 @@ void __cdecl d_scene_drawn(void* scene_renderer, void* camera) {
 }
 
 // Direct3D 12's passes and their outputs, at the frame's size: made, or remade.
-bool ensure_passes(UINT width, UINT height, DXGI_FORMAT format) {
+bool ensure_passes(UINT width, UINT height, DXGI_FORMAT format, UINT depth_width, UINT depth_height) {
 #if defined(RFGRT_STREAMLINE)
     if (s.passes_broken) return false;
     if (!s.pass_signature) {
@@ -715,18 +735,18 @@ bool ensure_passes(UINT width, UINT height, DXGI_FORMAT format) {
         s.descriptor_size = s.d3d12->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
         s.passes_broken = false;
     }
-    auto make = [&](ComPtr<ID3D12Resource>& texture, DXGI_FORMAT f, const char* name) {
+    auto make = [&](ComPtr<ID3D12Resource>& texture, DXGI_FORMAT f, const char* name, UINT w, UINT h) {
         if (texture) {
             const D3D12_RESOURCE_DESC d = texture->GetDesc();
-            if (d.Width == width && d.Height == height && d.Format == f) return true;
+            if (d.Width == w && d.Height == h && d.Format == f) return true;
             if (!wait_idle()) return false;
             texture.Reset();
         }
         D3D12_HEAP_PROPERTIES hp{D3D12_HEAP_TYPE_DEFAULT};
         D3D12_RESOURCE_DESC d{};
         d.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-        d.Width = width;
-        d.Height = height;
+        d.Width = w;
+        d.Height = h;
         d.DepthOrArraySize = 1;
         d.MipLevels = 1;
         d.Format = f;
@@ -735,16 +755,18 @@ bool ensure_passes(UINT width, UINT height, DXGI_FORMAT format) {
         const HRESULT hr = s.d3d12->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &d, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
                                                            nullptr, IID_PPV_ARGS(&texture));
         if (FAILED(hr)) {
-            LOG("presenter: the %s texture %ux%u could not be made (0x%08lX)", name, width, height, static_cast<unsigned long>(hr));
+            LOG("presenter: the %s texture %ux%u could not be made (0x%08lX)", name, w, h, static_cast<unsigned long>(hr));
             return false;
         }
         return true;
     };
-    return make(s.motion, DXGI_FORMAT_R16G16_FLOAT, "motion") && make(s.ui, format, "UI layer");
+    return make(s.motion, DXGI_FORMAT_R16G16_FLOAT, "motion", depth_width, depth_height) && make(s.ui, format, "UI layer", width, height);
 #else
     (void)width;
     (void)height;
     (void)format;
+    (void)depth_width;
+    (void)depth_height;
     return false;
 #endif
 }
@@ -779,7 +801,7 @@ D3D12_GPU_DESCRIPTOR_HANDLE write_set(UINT set, ID3D12Resource* t0, DXGI_FORMAT 
 
 // The motion and the UI layer for the slot's frame (its copy, the frame before the HUD and the depth in the non-pixel
 // shader resource state), on our list.
-void record_passes(UINT slot, UINT width, UINT height, DXGI_FORMAT format) {
+void record_passes(UINT slot, UINT width, UINT height, DXGI_FORMAT format, UINT depth_width, UINT depth_height) {
     ID3D12GraphicsCommandList* list = s.list.Get();
     ID3D12DescriptorHeap* heaps[] = {s.heap.Get()};
     list->SetDescriptorHeaps(1, heaps);
@@ -796,14 +818,14 @@ void record_passes(UINT slot, UINT width, UINT height, DXGI_FORMAT format) {
     multiply(world, c.prev_view_projection, clip_to_prev);
     uint32_t constants[kPassConstants] = {};
     memcpy(constants, clip_to_prev, sizeof(clip_to_prev));
-    constants[16] = width;
-    constants[17] = height;
+    constants[16] = depth_width;  // the motion at the depth's size
+    constants[17] = depth_height;
     memcpy(&constants[18], &s.depth_max, sizeof(float));
     list->SetPipelineState(s.motion_pso.Get());
     list->SetComputeRoot32BitConstants(0, kPassConstants, constants, 0);
     list->SetComputeRootDescriptorTable(1, write_set(slot * 2, s.depth12[slot].Get(), DXGI_FORMAT_R32_FLOAT, nullptr,
                                                      DXGI_FORMAT_R32_FLOAT, s.motion.Get(), DXGI_FORMAT_R16G16_FLOAT));
-    list->Dispatch((width + 7) / 8, (height + 7) / 8, 1);
+    list->Dispatch((depth_width + 7) / 8, (depth_height + 7) / 8, 1);
     // the UI layer
     const uint32_t size[2] = {width, height};
     list->SetPipelineState(s.ui_pso.Get());
@@ -898,14 +920,16 @@ bool present_ours(IDXGISwapChain* game, UINT sync_interval, HRESULT& result) {
     if (s.streamline) {
         const bool have = s.scene_for == s.frames;
         framegen::begin_frame(have);
-        if (have && framegen::enabled() && ensure_passes(desc.Width, desc.Height, format)) {
+        const UINT depth_width = s.depth_width[slot] ? s.depth_width[slot] : desc.Width;
+        const UINT depth_height = s.depth_height[slot] ? s.depth_height[slot] : desc.Height;
+        if (have && framegen::enabled() && ensure_passes(desc.Width, desc.Height, format, depth_width, depth_height)) {
             ID3D12Resource* hudless12 = s.hudless12[slot].Get();
             ID3D12Resource* depth12 = s.depth12[slot].Get();
             const D3D12_RESOURCE_STATES srv = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
             transition(list, frame12, D3D12_RESOURCE_STATE_COPY_SOURCE, srv);
             transition(list, hudless12, D3D12_RESOURCE_STATE_COMMON, srv);
             transition(list, depth12, D3D12_RESOURCE_STATE_COMMON, srv);
-            record_passes(slot, desc.Width, desc.Height, format);
+            record_passes(slot, desc.Width, desc.Height, format, depth_width, depth_height);
             framegen::Inputs in;
             in.depth = depth12;
             in.motion = s.motion.Get();
@@ -913,6 +937,8 @@ bool present_ours(IDXGISwapChain* game, UINT sync_interval, HRESULT& result) {
             in.ui = s.ui.Get();
             in.width = desc.Width;
             in.height = desc.Height;
+            in.depth_width = depth_width;
+            in.depth_height = depth_height;
             inputs = framegen::set_inputs(list, s.camera, in);
             transition(list, depth12, srv, D3D12_RESOURCE_STATE_COMMON);
             transition(list, hudless12, srv, D3D12_RESOURCE_STATE_COMMON);

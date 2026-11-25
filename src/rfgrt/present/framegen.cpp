@@ -325,9 +325,11 @@ bool set_inputs(ID3D12GraphicsCommandList* list, const Camera& c, const Inputs& 
     to_matrix(identity, k.clipToLensClip);
     clip_to_clip(c.inv_view_projection, c.delta, 1.0, c.prev_view_projection, k.clipToPrevClip);
     clip_to_clip(c.prev_inv_view_projection, c.delta, -1.0, c.view_projection, k.prevClipToClip);
-    // the presented frame is the game's (not jittered); the motion in pixels, the camera's included
+    // the presented frame is the game's (not jittered); the motion in pixels of its own size, the camera's included
+    const unsigned depth_width = in.depth_width ? in.depth_width : in.width;
+    const unsigned depth_height = in.depth_height ? in.depth_height : in.height;
     k.jitterOffset = sl::float2(0.0f, 0.0f);
-    k.mvecScale = sl::float2(1.0f / float(in.width), 1.0f / float(in.height));
+    k.mvecScale = sl::float2(1.0f / float(depth_width), 1.0f / float(depth_height));
     k.cameraPinholeOffset = sl::float2(0.0f, 0.0f);
     k.cameraPos = sl::float3(0.0f, 0.0f, 0.0f);  // camera-relative
     k.cameraRight = sl::float3(c.right[0], c.right[1], c.right[2]);
@@ -353,9 +355,10 @@ bool set_inputs(ID3D12GraphicsCommandList* list, const Camera& c, const Inputs& 
     sl::Resource hudless(sl::ResourceType::eTex2d, in.hudless, nullptr, nullptr, uint32_t(D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
     sl::Resource ui(sl::ResourceType::eTex2d, in.ui, nullptr, nullptr, uint32_t(D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
     const sl::Extent extent{0, 0, in.width, in.height};
+    const sl::Extent depth_extent{0, 0, depth_width, depth_height};
     const sl::ResourceTag tags[] = {
-        sl::ResourceTag(&depth, sl::kBufferTypeDepth, sl::ResourceLifecycle::eOnlyValidNow, &extent),
-        sl::ResourceTag(&motion, sl::kBufferTypeMotionVectors, sl::ResourceLifecycle::eOnlyValidNow, &extent),
+        sl::ResourceTag(&depth, sl::kBufferTypeDepth, sl::ResourceLifecycle::eOnlyValidNow, &depth_extent),
+        sl::ResourceTag(&motion, sl::kBufferTypeMotionVectors, sl::ResourceLifecycle::eOnlyValidNow, &depth_extent),
         sl::ResourceTag(&hudless, sl::kBufferTypeHUDLessColor, sl::ResourceLifecycle::eOnlyValidNow, &extent),
         sl::ResourceTag(&ui, sl::kBufferTypeUIColorAndAlpha, sl::ResourceLifecycle::eOnlyValidNow, &extent),
     };
