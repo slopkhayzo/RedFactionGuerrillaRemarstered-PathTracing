@@ -91,6 +91,15 @@ fn rl_renderer::get_viewport_z_range
 field rl_renderable_particles_instance::m_renderable_particles_p as ParticlesInstance_renderable
 field rl_renderable_particles::m_material_p as Particles_material
 field rl_particle_material_data::flags as ParticleMaterial_flags
+# the effects whose particles are drawn with the sky too (Particles.WithSkyEffects: the wind's gusts), tagged as their
+# templates are made
+fn vfx_effect_template::init
+field vfx_effect_template::m_vfx_data_p as VfxTemplate_data
+field vfx_effect_template::vfx_data::effect_name as VfxData_effectName
+field vfx_effect_template::vfx_data::num_emitters as VfxData_numEmitters
+field vfx_effect_template::vfx_data::emitters as VfxData_emitters
+size vfx_effect_template::emitter as VfxEmitter_size
+field vfx_effect_template::emitter::material as VfxEmitter_material
 fn rl_scene_renderer::set_shadow_states
 field rl_renderer::m_pCommandWriter as Renderer_commandWriter
 field rl_renderer::m_commonFragmentData as Renderer_commonFragmentData

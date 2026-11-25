@@ -116,6 +116,9 @@ struct Config {
     // [Particles] while path tracing, the particles the game draws over everything (always on top: the camera's wind
     // dust) drawn with the sky instead, behind every world object (render/sky_particles.h); false: the game's
     bool particles_always_on_top_with_sky = true;
+    // the effects (the start of their names, comma separated) whose particles are drawn with the sky too: the wind's
+    // gusts and dust devils (env_gust_a/b, env_gust_devil_a), which drift through walls; empty: none
+    std::string particles_with_sky_effects = "env_gust,env_dust_camera";
 
     // [Reflections] path-traced reflections in place of the lit shaders' specular ambient (with the core, Host.Mode=3)
     bool refl_enabled = false;
