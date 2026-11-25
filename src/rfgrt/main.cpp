@@ -115,6 +115,8 @@ void init() {
     link.gi_history = cfg.gi_history > 1 ? cfg.gi_history : 1;
     link.gi_filter_radius = cfg.gi_filter_radius >= 0 ? cfg.gi_filter_radius : 0;
     link.gi_bounce = float(cfg.gi_bounce >= 0.0 ? cfg.gi_bounce : 0.0);
+    link.gi_sun_bounce_albedo =
+        float(cfg.gi_sun_bounce_albedo < 0.0 ? 0.0 : cfg.gi_sun_bounce_albedo > 1.0 ? 1.0 : cfg.gi_sun_bounce_albedo);
     link.gi_sky = float(cfg.gi_sky >= 0.0 ? cfg.gi_sky : 0.0);
     link.gi_cache = cfg.gi_cache;
     link.gi_glass = cfg.gi_glass;

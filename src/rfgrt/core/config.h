@@ -68,6 +68,11 @@ struct Config {
     int gi_history = 24;           // the most frames averaged
     int gi_filter_radius = 3;      // the spatial filter's radius in pixels
     double gi_bounce = 1.0;        // the bounced light's scale: taste, 1 is as traced
+    // The least albedo a sunlit surface bounces the sun with (GI.SunBounceAlbedo): the game's textures are authored dark
+    // under a very bright sun (its terrain sends on about 0.03 of the sun it gets, real ground 0.15 to 0.3), so the light
+    // sunlit surfaces bounce is scaled as if no material were darker than this (at most 8 times); 0: as the game draws
+    // them. Only the sunlit surfaces' light: the shaded ones' stays as traced.
+    double gi_sun_bounce_albedo = 0.1;
     double gi_sky_drawn = 1.0;    // the sky rays that get out see: 0 the game's ambient colour, 1 the drawn sky's colour at
                                   // the ambient's brightness, 2 the drawn sky as it is (about 4x darker); between: blends
     int gi_denoiser = 2;          // the GI's denoiser: 0 one 7x7 pass, 1 an edge-avoiding wavelet over ~61 x 61 pixels, 2 DLSS

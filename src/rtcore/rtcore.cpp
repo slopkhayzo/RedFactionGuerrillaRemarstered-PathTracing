@@ -47,7 +47,8 @@ namespace rtcore {
 namespace {
 
 constexpr int kRing = 3;            // frames in flight: command allocators, readback slots
-constexpr uint32_t kCounts = 512;   // per slot: 5 pixel classes (of 8), 16 depth-ratio buckets, 8 spare, 32 samples x 3
+constexpr uint32_t kCounts = 512;   // per slot: 5 pixel classes (of 8), 16 depth-ratio buckets, 8 spare, 32 samples x 3;
+                                    // with GI, the GI census from uint 100 (gi_trace.hlsl, Telemetry.GiCensus)
 constexpr uint32_t kStamps = 12;    // timestamps per slot: TLAS start and end, pass start and end, GI, lights, reflections,
                                     // the fog's start and end; in the GI's: the rays' start, the glass's, the sun tint's
 // The volumetric fog's grid of froxels (shaders/fog_common.hlsli): columns across the screen (rows by its aspect), slices
@@ -310,7 +311,7 @@ struct GiConstants {
     CompareConstants base;
     float ambient[4], back_ambient[4], sun_color[4];  // the game's, in its shaders' units (frame_scene.h)
     float gi[4];                                        // rays a pixel, their length, the albedo they meet, max frames
-    float gi2[4];                                       // x: the bounced light's scale, y: the sky's
+    float gi2[4];                                       // x: the bounced light's scale, y: the sky's, z: GI.SunBounceAlbedo
     float world[4];                                     // xyz: the render offset; w: 1 with the radiance cache
     float sky_probe[4];  // x: 1 with the drawn sky; y: the cosine of the angle about the sun it leaves out; z: GI.SkyDrawn
     float fog[4];        // the game's fog: its density a, height falloff b, start c (fogDistance's y, x, w); w: 1
@@ -906,6 +907,14 @@ int run(const RunParams& p) {
     CompareConstants lastCamera{};
     GiConstants lastGi{};
     uint64_t giFrames = 0;
+    // Telemetry.GiCensus (RFGRT_TELEMETRY_GICENSUS=1, read here from the environment: a diagnostic): gi_trace.hlsl's census
+    // of the traced light by the kind of surface, five classes of five sums from the frame's counter 100, summed over the
+    // log's period.
+    const bool giCensus = [] {
+        char v[8] = {};
+        return GetEnvironmentVariableA("RFGRT_TELEMETRY_GICENSUS", v, sizeof(v)) > 0 && v[0] == '1';
+    }();
+    uint64_t census[25] = {};
     uint64_t lightFrames = 0, lightsTraced = 0;
     // The game's lit colour (GI's hits read it where the game drew them in the previous frame)
     ID3D12Resource* radiance = nullptr;
@@ -1396,6 +1405,8 @@ int run(const RunParams& p) {
                         memcpy(st.samples, c + 32, sizeof(st.samples));
                     } else if (mode == rfgrt_ipc::kModeSunShadows) {
                         for (int i = 0; i < 9; ++i) st.shadow[i] += c[i];
+                        if (giCensus)
+                            for (int i = 0; i < 25; ++i) census[i] += c[100 + i];
                         st.glass_px += c[60];
                         st.glass_lit += c[61];
                         static uint64_t skyLog = 0;
@@ -1767,7 +1778,7 @@ int run(const RunParams& p) {
                         // already be recorded by now (this list is recorded at the frame scene, often later), hence >=.
                         const bool radianceOk = radiance && historyValid && rfgrt_ipc::load64(&b->radiance_frame) >= next - 1;
                         if (radianceOk) ++radianceFrames;
-                        g.base.flags = depthFlag | historyFlag | (radianceOk ? 16u : 0u) | frostedFlag | tintFlag;
+                        g.base.flags = depthFlag | historyFlag | (radianceOk ? 16u : 0u) | frostedFlag | tintFlag | (giCensus ? 128u : 0u);
                         g.base.shadow[1] = uint32_t(b->gi_filter_radius >= 0 ? b->gi_filter_radius : 0);
                         memcpy(g.ambient, h->ambient, sizeof(g.ambient));
                         memcpy(g.back_ambient, h->back_ambient, sizeof(g.back_ambient));
@@ -1778,6 +1789,7 @@ int run(const RunParams& p) {
                         g.gi[3] = float(b->gi_history > 1 ? b->gi_history : 1);
                         g.gi2[0] = b->gi_bounce;
                         g.gi2[1] = b->gi_sky;
+                        g.gi2[2] = b->gi_sun_bounce_albedo;  // GI.SunBounceAlbedo (trace_common.hlsli sun_bounce)
                         memcpy(g.world, h->render_offset, sizeof(float) * 3);
                         g.world[3] = cacheOn ? 1.0f : 0.0f;
                         g.sky_probe[0] = skyOn ? 1.0f : 0.0f;
@@ -2374,6 +2386,20 @@ int run(const RunParams& p) {
                          lastGi.sun_color[1], lastGi.sun_color[2], lastGi.sun_color[3]);
                     giFrames = 0;
                     radianceFrames = 0;
+                }
+                if (giCensus) {
+                    static const char* const kCensusClass[5] = {"up, in the sun", "up, in shade", "sideways, in the sun",
+                                                                "sideways, in shade", "down (ceilings, undersides)"};
+                    for (int cc = 0; cc < 5; ++cc) {
+                        const uint64_t* v = census + cc * 5;
+                        if (!v[0]) continue;
+                        const double nn = double(v[0]) * 256.0;
+                        logf("GI census, %s: %llu pixels; mean luminance in the game's units: the traced irradiance %.3f, the "
+                             "game's lit colour %.3f, the sun's irradiance %.3f, the game's own ambient for that normal %.3f",
+                             kCensusClass[cc], static_cast<unsigned long long>(v[0]), double(v[1]) / nn, double(v[2]) / nn,
+                             double(v[3]) / nn, double(v[4]) / nn);
+                    }
+                    memset(census, 0, sizeof(census));
                 }
                 uint64_t both = 0;
                 for (uint64_t r : st.ratio) both += r;
