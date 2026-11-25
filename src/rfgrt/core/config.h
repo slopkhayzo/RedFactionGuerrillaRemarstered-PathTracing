@@ -113,6 +113,10 @@ struct Config {
     // fill left nearly black); brighter scenes keep the game's (patch/eye_adaption.h)
     double tonemap_eye_adaptation_dark = 1.0;
 
+    // [Particles] while path tracing, the particles the game draws over everything (always on top: the camera's wind
+    // dust) drawn with the sky instead, behind every world object (render/sky_particles.h); false: the game's
+    bool particles_always_on_top_with_sky = true;
+
     // [Reflections] path-traced reflections in place of the lit shaders' specular ambient (with the core, Host.Mode=3)
     bool refl_enabled = false;
     double refl_length = 100.0;    // the rays' length in metres

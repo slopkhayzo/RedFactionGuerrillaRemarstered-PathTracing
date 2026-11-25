@@ -44,6 +44,9 @@ inline uint32_t rl_scene_renderer__render = 0x00161C50;  // Steam 0x00161D20; rl
 inline uint32_t rl_scene_renderer__clb_render = 0x00145BF0;  // Steam 0x00145CB0; rl_scene_renderer::clb_render, 1383 bytes: void __thiscall rl_scene_renderer::(rl_renderer*, rl_camera*, rl_light*, rl_visibility_manager*, rl_batched_pass*, rl_renderable_instance**, int)
 inline uint32_t rl_scene_renderer__render_shadow_pass = 0x00117CB0;  // Steam 0x00117D60; rl_scene_renderer::render_shadow_pass, 1087 bytes: void __thiscall rl_scene_renderer::(rl_renderer*, rl_camera*, rl_light*, rl_dev_render_target*, int, int, rl_shadow_creation_parameters*, rl_batched_pass*, uint, rl_renderable_instance**, uint, bool)
 inline uint32_t rl_scene_renderer__create_render_textures = 0x00144BE0;  // Steam 0x00144CA0; rl_scene_renderer::create_render_textures, 2303 bytes: void __thiscall rl_scene_renderer::(keen::GraphicsCommandWriter*)
+inline uint32_t rl_particle_renderer__render = 0x00129EC0;  // Steam 0x00129F80; rl_particle_renderer::render, 2664 bytes: void __thiscall rl_particle_renderer::(rl_renderer*, rl_camera*, rl_renderable_particles_instance*, rl_particle_lighting_state*, bool)
+inline uint32_t rl_renderer__set_viewport_z_range = 0x000C5250;  // Steam 0x000C52A0; rl_renderer::set_viewport_z_range, 43 bytes: void __thiscall rl_renderer::(float, float)
+inline uint32_t rl_renderer__get_viewport_z_range = 0x000C52A0;  // Steam 0x000C52F0; rl_renderer::get_viewport_z_range, 27 bytes: void __thiscall rl_renderer::(float*, float*)
 inline uint32_t rl_scene_renderer__set_shadow_states = 0x000F5F70;  // Steam 0x000F6010; rl_scene_renderer::set_shadow_states, 382 bytes: void __thiscall rl_scene_renderer::(rl_shadow_render_parameters*, rl_renderer*)
 inline uint32_t renderSsaoEffect = 0x000FDAF0;  // Steam 0x000FDB90; renderSsaoEffect, 3826 bytes: void __cdecl(SsaoContext*, keen::GraphicsCommandWriter*, SsaoRenderSettings*, rl_camera*, keen::TextureData*, keen::RenderTarget*, keen::RenderTarget*, keen::RenderTarget*)
 inline uint32_t keen__graphics__initializeRenderGeometry = 0x008623C0;  // Steam 0x00862710; keen::graphics::initializeRenderGeometry, 481 bytes: bool __cdecl(keen::RenderGeometry*, keen::GraphicsSystem*, keen::RenderGeometryDescription*, keen::RenderGeometryInitializationData*, rchar*)
@@ -131,6 +134,9 @@ inline uint32_t HdrState_lumOffset = 0x8;  // rl_hdr_state::m_lum_offset: float
 inline uint32_t HdrState_eyeAdaptionBase = 0x38;  // rl_hdr_state::m_eye_adaption_base: float
 inline uint32_t HdrState_eyeAdaptionAmount = 0x3C;  // rl_hdr_state::m_eye_adaption_amount: float
 inline uint32_t HdrState_bloomAmount = 0x48;  // rl_hdr_state::m_bloom_amount: float
+inline uint32_t ParticlesInstance_renderable = 0xCC;  // rl_renderable_particles_instance::m_renderable_particles_p: rl_renderable_particles*
+inline uint32_t Particles_material = 0x10;  // rl_renderable_particles::m_material_p: rl_particle_material_data*
+inline uint32_t ParticleMaterial_flags = 0x2C;  // rl_particle_material_data::flags: int
 inline uint32_t Renderer_commandWriter = 0x440;  // rl_renderer::m_pCommandWriter: keen::GraphicsCommandWriter*
 inline uint32_t Renderer_commonFragmentData = 0x130;  // rl_renderer::m_commonFragmentData: keen::CommonFragmentShaderConstants
 inline uint32_t Renderer_commonVertexData = 0x30;  // rl_renderer::m_commonVertexData: keen::CommonVertexShaderConstants
@@ -267,6 +273,9 @@ inline constexpr RvaEntry kRvaTable[] = {
     {&rva::rl_scene_renderer__clb_render, {0x00145BF0, 0x00145CB0}},
     {&rva::rl_scene_renderer__render_shadow_pass, {0x00117CB0, 0x00117D60}},
     {&rva::rl_scene_renderer__create_render_textures, {0x00144BE0, 0x00144CA0}},
+    {&rva::rl_particle_renderer__render, {0x00129EC0, 0x00129F80}},
+    {&rva::rl_renderer__set_viewport_z_range, {0x000C5250, 0x000C52A0}},
+    {&rva::rl_renderer__get_viewport_z_range, {0x000C52A0, 0x000C52F0}},
     {&rva::rl_scene_renderer__set_shadow_states, {0x000F5F70, 0x000F6010}},
     {&rva::renderSsaoEffect, {0x000FDAF0, 0x000FDB90}},
     {&rva::keen__graphics__initializeRenderGeometry, {0x008623C0, 0x00862710}},
@@ -349,6 +358,9 @@ inline constexpr RvaEntry kRvaTable[] = {
     {&off::HdrState_eyeAdaptionBase, {0x38, 0x38}},
     {&off::HdrState_eyeAdaptionAmount, {0x3C, 0x3C}},
     {&off::HdrState_bloomAmount, {0x48, 0x48}},
+    {&off::ParticlesInstance_renderable, {0xCC, 0xCC}},
+    {&off::Particles_material, {0x10, 0x10}},
+    {&off::ParticleMaterial_flags, {0x2C, 0x2C}},
     {&off::Renderer_commandWriter, {0x440, 0x440}},
     {&off::Renderer_commonFragmentData, {0x130, 0x130}},
     {&off::Renderer_commonVertexData, {0x30, 0x30}},
@@ -481,6 +493,9 @@ inline uint32_t rl_scene_renderer__render = 4303;
 inline uint32_t rl_scene_renderer__clb_render = 1383;
 inline uint32_t rl_scene_renderer__render_shadow_pass = 1087;
 inline uint32_t rl_scene_renderer__create_render_textures = 2303;
+inline uint32_t rl_particle_renderer__render = 2664;
+inline uint32_t rl_renderer__set_viewport_z_range = 43;
+inline uint32_t rl_renderer__get_viewport_z_range = 27;
 inline uint32_t rl_scene_renderer__set_shadow_states = 382;
 inline uint32_t renderSsaoEffect = 3826;
 inline uint32_t keen__graphics__initializeRenderGeometry = 481;

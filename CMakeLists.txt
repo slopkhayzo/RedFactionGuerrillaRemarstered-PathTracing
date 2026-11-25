@@ -157,6 +157,7 @@ add_library(rfgrt SHARED
     src/rfgrt/render/seam.cpp
     src/rfgrt/render/gi.cpp
     src/rfgrt/render/lights.cpp
+    src/rfgrt/render/sky_particles.cpp
     src/rfgrt/rt/link.cpp
     src/rfgrt/mirror/geometry.cpp
     src/rfgrt/mirror/geometry_census.cpp

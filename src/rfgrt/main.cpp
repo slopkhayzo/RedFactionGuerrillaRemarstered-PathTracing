@@ -25,6 +25,7 @@
 #include "render/gi.h"
 #include "render/lights.h"
 #include "render/seam.h"
+#include "render/sky_particles.h"
 #include "rt/link.h"
 #include "test/automation.h"
 
@@ -163,6 +164,7 @@ void init() {
                                                                         : "stay the game's (every hit a plain grey)");
     if (!lights::install(cfg)) LOG("lights hooks failed: no shadows for the dynamic lights");
     if (!gi::install(cfg)) LOG("gi hooks failed: no global illumination");
+    sky_particles::install(cfg);  // logs its own outcome
     if (!seam::install(cfg)) {
         LOG("frame seam hooks failed: plugin stays inactive");
         return;
