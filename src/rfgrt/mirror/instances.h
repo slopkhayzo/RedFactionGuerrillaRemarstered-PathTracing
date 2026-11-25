@@ -14,5 +14,7 @@ bool install(const Config& cfg);
 // Render thread, at rl_scene_renderer::render's start, with its scene and camera.
 void snapshot(uint8_t* renderer, uint8_t* scene, uint8_t* camera, int64_t frame);
 void report(bool at_exit);
+// Path tracing switched off (core/active.h): the materials sent to the core, sent again to the next one.
+void on_core_stop();
 
 }  // namespace instances

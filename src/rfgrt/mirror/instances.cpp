@@ -1123,6 +1123,13 @@ void snapshot(uint8_t* renderer, uint8_t* scene, uint8_t* camera, int64_t frame)
     g_stats.registered = registered;
 }
 
+void on_core_stop() {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    g_mesh_materials.clear();
+    g_materials_waiting.clear();
+    g_materials_waiting_n = 0;
+}
+
 void report(bool at_exit) {
     Stats st;
     {

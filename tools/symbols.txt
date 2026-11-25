@@ -76,6 +76,30 @@ fn rl_scene_renderer::render
 fn rl_scene_renderer::clb_render
 fn rl_scene_renderer::render_shadow_pass
 fn rl_scene_renderer::create_render_textures
+# the HDR state rl_scene_renderer::render gets: its tone map, eye adaptation and bloom (Tonemap.*, in PATH TRACED)
+size rl_hdr_state as HdrState_size
+field rl_hdr_state::m_lum_range as HdrState_lumRange
+field rl_hdr_state::m_lum_offset as HdrState_lumOffset
+field rl_hdr_state::m_eye_adaption_base as HdrState_eyeAdaptionBase
+field rl_hdr_state::m_eye_adaption_amount as HdrState_eyeAdaptionAmount
+field rl_hdr_state::m_bloom_amount as HdrState_bloomAmount
+# the particles the game draws over everything (always on top: the camera's wind dust), drawn with the sky while path
+# tracing (Particles.AlwaysOnTopWithSky, render/sky_particles.h)
+fn rl_particle_renderer::render @00129EC0
+fn rl_renderer::set_viewport_z_range
+fn rl_renderer::get_viewport_z_range
+field rl_renderable_particles_instance::m_renderable_particles_p as ParticlesInstance_renderable
+field rl_renderable_particles::m_material_p as Particles_material
+field rl_particle_material_data::flags as ParticleMaterial_flags
+# the effects whose particles are drawn with the sky too (Particles.WithSkyEffects: the wind's gusts), tagged as their
+# templates are made
+fn vfx_effect_template::init
+field vfx_effect_template::m_vfx_data_p as VfxTemplate_data
+field vfx_effect_template::vfx_data::effect_name as VfxData_effectName
+field vfx_effect_template::vfx_data::num_emitters as VfxData_numEmitters
+field vfx_effect_template::vfx_data::emitters as VfxData_emitters
+size vfx_effect_template::emitter as VfxEmitter_size
+field vfx_effect_template::emitter::material as VfxEmitter_material
 fn rl_scene_renderer::set_shadow_states
 field rl_renderer::m_pCommandWriter as Renderer_commandWriter
 field rl_renderer::m_commonFragmentData as Renderer_commonFragmentData

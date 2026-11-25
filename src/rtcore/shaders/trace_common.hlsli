@@ -43,7 +43,9 @@ cbuffer Frame : register(b0) {
     float4 sun_color;     // the sun's light colour, the same units
     float4 gi;            // GI: rays a pixel, their length (m), the albedo of what they hit, max frames averaged;
                           // reflections: the lobe's exponent, the rays' length, the albedo, max frames
-    float4 gi2;           // x: the bounced light's scale (GI.Bounce), y: the sky's as a light (GI.Sky)
+    float4 gi2;           // x: the bounced light's scale (GI.Bounce), y: the sky's as a light (GI.Sky), z: the least
+                          // albedo sunlit surfaces bounce the sun with (GI.SunBounceAlbedo; 0: as drawn; bounce_scale),
+                          // w: the least albedo surfaces in shade pass their light on with (GI.ShadeBounceAlbedo)
     float4 world;         // xyz: the render offset (render-offset space + it = the world); w: 1 with the radiance cache
     float4 sky_probe;     // x: 1 with the drawn sky; y: the cosine of the angle about the sun it leaves out; z: GI.SkyDrawn;
                           // w: the tangent of the sun's angular radius (Shadows.SunAngle)
@@ -57,6 +59,8 @@ cbuffer Frame : register(b0) {
                           // (Reflections.GlassReflectance), y 1 when they are on (Reflections.Glass)
     float4 probe;         // xy: where the probe aims (probe.hlsl), fractions of the screen (Test.ProbePixel)
     float4 terrain;       // rgb: the albedo of a surface whose material is not known, the terrain (GI.TerrainAlbedo)
+    float4 upscale;       // DLSS (dlss.h): xy the GI's render size (0: the frame's), zw the sample's offset from each of its
+                          // pixels' centres (its pixels, y down); gi_size, gi_source
 };
 
 static const float PI = 3.14159265;
@@ -98,6 +102,18 @@ bool surface_at(int2 px, out float3 p, out float3 n) {
     n = normalize(cross(dy, dx));
     if (dot(n, cam_origin.xyz - p) < 0.0) n = -n;
     return true;
+}
+
+// The GI's size: the frame's, or with DLSS upscaling (a mode below DLAA) its render size, the top-left part of the
+// GI's textures.
+uint2 gi_size() { return upscale.x > 0.0 ? uint2(upscale.xy) : size; }
+
+// The frame's pixel a GI pixel traces from: itself, or with DLSS upscaling the one under the pixel's jittered point
+// (rr_guides.hlsl picks the same).
+int2 gi_source(uint2 q) {
+    if (upscale.x <= 0.0) return int2(q);
+    const float2 at = (float2(q) + 0.5 + upscale.zw) * (float2(size) / upscale.xy);
+    return clamp(int2(floor(at)), int2(0, 0), int2(size) - 1);
 }
 
 uint hash(uint x) {  // lowbias32
@@ -535,17 +551,71 @@ float3 shade_hit2(float3 origin, float3 dir, float t, uint instance, uint geomet
 // brings back (`seed`): the sky's radiance where it gets out, the light of the surface it meets otherwise (shade_hit2: a
 // second bounce). Never the whole sky regardless of what is around it: lit that way, every hidden or off-screen wall and
 // ceiling lit interiors with a flat ambient light.
+// GI.SunBounceAlbedo (gi2.z): the game's textures are authored dark under a very bright sun (its terrain sends on about
+// 0.03 of the sun it gets, where real ground sends on 0.15 to 0.3), so what lights the shade beside sunlit ground, its
+// bounce, came out far weaker than the game's own fill. The light a sunlit surface sends on is scaled as if its material
+// (its mean albedo; the terrain's: GI.TerrainAlbedo) were no darker than gi2.z, at most 32 times (the terrain's mean is
+// 0.014: at most 8 times stopped its floor at 0.11); 1 for a surface in shade (its light, the sky's and the bounces',
+// stays as traced: the bounces' feedback through the game's colour stays where it was) and with gi2.z 0. Whether the sun reaches it: a ray toward the sun from just before the hit (its own
+// surface stops it when it faces away).
+float sun_bounce_scale(float mean) {
+    return gi2.z > mean ? min(gi2.z / max(mean, 1e-3), 32.0) : 1.0;
+}
+
+// GI.ShadeBounceAlbedo (gi2.w): the same for a surface in shade, whose light (the sky's, the lights' and the bounces')
+// then goes on as if its material were no darker than gi2.w: the second and later bounces (an overhang's ceiling onto its
+// floor, the light through a room). They feed back through the next frames (the game's colour and the radiance cache
+// hold them), each round passing on at most gi2.w of the last (at most 0.5: main.cpp).
+float shade_bounce_scale(float mean) {
+    return gi2.w > mean ? min(gi2.w / max(mean, 1e-3), 32.0) : 1.0;
+}
+
+// The mean albedo's luminance of what a ray hit, as hit_surface gives it (s.mean), without the triangle: its material's
+// texture's last mip times its colour, the terrain's GI.TerrainAlbedo, gi.z without a material or a texture.
+float hit_mean(uint instance, uint geometry) {
+    const float3 lw = float3(0.2126, 0.7152, 0.0722);
+    const uint4 g = instances[instance];
+    const uint page = g.x & 0xFFu;
+    if (page >= 64u) return gi.z;
+    const uint2 head = pages[NonUniformResourceIndex(page)].Load2(g.w);
+    const uint2 geo = pages[NonUniformResourceIndex(page)].Load2(g.w + 8 + geometry * 8);
+    if (head.y >= kMaterialSlots || geo.y >= kMaterialEntries) return gi.z;
+    const uint4 mat = materials[head.y * kMaterialEntries + geo.y];
+    if ((mat.x & 0x80000000u) == 0u) return dot(terrain.rgb, lw);
+    const uint tex = mat.x & 0xFFFFu;
+    if (tex == 0u || tex > kMaterialTextures || head.x == 0xFFFFFFFFu) return gi.z;
+    const float3 color = float3(f16tof32(mat.z & 0xFFFFu), f16tof32(mat.z >> 16), f16tof32(mat.w & 0xFFFFu));
+    uint w, h, levels;
+    material_textures[NonUniformResourceIndex(tex - 1u)].GetDimensions(0, w, h, levels);
+    const float3 m = material_textures[NonUniformResourceIndex(tex - 1u)].SampleLevel(material_sampler, float2(0.5, 0.5),
+                                                                                      float(levels) - 1.0).rgb * color;
+    return all(m == m) ? dot(saturate(m), lw) : gi.z;
+}
+
+// The scale for a hit the game drew (or the radiance cache holds): its material first (no ray when both floors give it
+// the same, as for a material bright enough), then whether the sun reaches it (without a sun, everything is in shade).
+float bounce_scale(float3 hp, float3 dir, float t, uint instance, uint geometry) {
+    if (gi2.z <= 0.0 && gi2.w <= 0.0) return 1.0;
+    const float mean = hit_mean(instance, geometry);
+    const float sunlit = sun_bounce_scale(mean), shaded = shade_bounce_scale(mean);
+    if (sunlit == shaded) return sunlit;
+    return sun.w != 0.0 && lit_toward(hp - dir * (0.02 + 0.002 * t), normalize(sun.xyz)) ? sunlit : shaded;
+}
+
 float3 shade_hit(float3 origin, float3 dir, float t, uint instance, uint geometry, uint primitive, float2 bary, float3x4 to_world,
                  uint seed) {
     if (hit_translucent(instance, geometry))
         return pane_radiance(origin + dir * t, hit_surface(instance, geometry, primitive, bary, to_world, dir, kDiffuseSpread * t), t);
     float3 seen;
-    if (seen_radiance(origin + dir * t, seen)) return seen;
+    if (seen_radiance(origin + dir * t, seen)) return seen * bounce_scale(origin + dir * t, dir, t, instance, geometry);
     const float3 nh = hit_normal(instance, geometry, primitive, to_world, dir);
-    if (cache_radiance(origin + dir * t, nh, seen)) return seen;  // seen before, out of view now
+    if (cache_radiance(origin + dir * t, nh, seen))  // seen before, out of view now
+        return seen * bounce_scale(origin + dir * t, dir, t, instance, geometry);
     const Surface s = hit_surface(instance, geometry, primitive, bary, to_world, dir, kDiffuseSpread * t);
     const float3 hp = origin + dir * t + s.n * (0.02 + 0.002 * t);
-    float3 e = sun_at(hp, s.n);
+    const float mean = dot(s.mean, float3(0.2126, 0.7152, 0.0722));
+    float3 e = sun_at(hp, s.n) * sun_bounce_scale(mean);  // the sun's light (0 in shade), then the rest of it in shade's
+    float3 rest;
     const uint s1 = hash(seed), s2 = hash(s1 + 0x9E3779B9u);
     const float3 d = cosine_dir(s.n, unit(s1), unit(s2));
     RayDesc ray;
@@ -557,10 +627,10 @@ float3 shade_hit(float3 origin, float3 dir, float t, uint instance, uint geometr
     q.TraceRayInline(scene, RAY_FLAG_NONE, 0x01, ray);
     RT_PROCEED(q);
     if (q.CommittedStatus() != COMMITTED_TRIANGLE_HIT)
-        e += gi2.y * PI * sky_radiance(d);  // cosine-weighted: E = pi L
+        rest = gi2.y * PI * sky_radiance(d);  // cosine-weighted: E = pi L
     else
-        e += PI * shade_hit2(hp, d, q.CommittedRayT(), q.CommittedInstanceID(), q.CommittedGeometryIndex(),
-                             q.CommittedPrimitiveIndex(), q.CommittedTriangleBarycentrics(), q.CommittedObjectToWorld3x4(),
-                             hash(s2 ^ 0x27D4EB2Fu));
-    return surface_radiance(s, e);
+        rest = PI * shade_hit2(hp, d, q.CommittedRayT(), q.CommittedInstanceID(), q.CommittedGeometryIndex(),
+                               q.CommittedPrimitiveIndex(), q.CommittedTriangleBarycentrics(), q.CommittedObjectToWorld3x4(),
+                               hash(s2 ^ 0x27D4EB2Fu));
+    return surface_radiance(s, e + rest * shade_bounce_scale(mean));
 }

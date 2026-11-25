@@ -55,7 +55,7 @@ bool dev_view(uint32_t handle, ID3D11ShaderResourceView** out) {
         void* tex = nullptr;
         rfg::fn<void**(__cdecl*)(void**, uint32_t)>(rfg::rva::get_dev_texture)(&tex, handle);
         if (!tex) return false;
-        *out = *reinterpret_cast<ID3D11ShaderResourceView**>(static_cast<uint8_t*>(tex) + 0x18);
+        *out = *reinterpret_cast<ID3D11ShaderResourceView**>(static_cast<uint8_t*>(tex) + rfg::off::TextureData_pShaderView);
         return *out != nullptr;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
@@ -308,6 +308,15 @@ void on_seam(ID3D11Device* dev, ID3D11DeviceContext* ctx, int64_t frame, int64_t
         if (ticks > g_seam_max_ticks) g_seam_max_ticks = ticks;
         ++g_seams;
     }
+}
+
+void on_core_stop() {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    g_ids.clear();
+    g_asked.clear();
+    g_next = 0;
+    for (auto& s : g_state) s.store(kUnknown);
+    g_copied.clear();  // (the render thread's: idle here, path tracing off and its frame work finished)
 }
 
 void log_stats() {

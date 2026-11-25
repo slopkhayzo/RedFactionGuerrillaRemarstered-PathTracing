@@ -33,5 +33,8 @@ bool material_entry(uint32_t material_handle, rfgrt_scene::MaterialEntry* out);
 // few of the textures asked for since (their device objects are the game's: read there), sent at a later seam.
 void on_seam(ID3D11Device* dev, ID3D11DeviceContext* ctx, int64_t frame, int64_t core_queued);
 void log_stats();
+// Path tracing switched off (core/active.h): the core's texture table is gone; the next core's starts empty, and the
+// textures are asked for again as the materials name them.
+void on_core_stop();
 
 }  // namespace textures

@@ -1,7 +1,9 @@
 <#
 .SYNOPSIS
   Downloads the parts of NVIDIA's DLSS SDK the core builds against for DLSS Ray Reconstruction: the headers, the x64
-  static-CRT NGX library, the release runtime nvngx_dlssd.dll, the licence and the integration guides.
+  static-CRT NGX library, the release runtime nvngx_dlssd.dll, the licence and the integration guides. Also the
+  dynamic-CRT NGX library and the Super Resolution runtime nvngx_dlss.dll, for a game that upscales its own frame with
+  DLSS (OpenRFG64 VOM builds against this copy).
 
 .DESCRIPTION
   Pinned to one tag of https://github.com/NVIDIA/DLSS (the same as the SpaceEngineers-RTHWAccel project's). The files
@@ -45,7 +47,9 @@ $files = @(
     'include/nvsdk_ngx_standalone_cuda.h',
     'include/nvsdk_ngx_vk.h',
     'lib/Windows_x86_64/x64/nvsdk_ngx_s.lib',
-    'lib/Windows_x86_64/rel/nvngx_dlssd.dll'
+    'lib/Windows_x86_64/x64/nvsdk_ngx_d.lib',
+    'lib/Windows_x86_64/rel/nvngx_dlssd.dll',
+    'lib/Windows_x86_64/rel/nvngx_dlss.dll'
 )
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $hashes = New-Object System.Collections.Generic.List[string]
@@ -66,12 +70,13 @@ foreach ($file in $files) {
 }
 $hashes | Set-Content -Encoding UTF8 (Join-Path $target 'SHA256SUMS.txt')
 @"
-# NVIDIA DLSS SDK (Ray Reconstruction)
+# NVIDIA DLSS SDK (Ray Reconstruction, Super Resolution)
 
 - Source: https://github.com/NVIDIA/DLSS, tag ``$Tag``, fetched by ``tools/fetch_dlss.ps1`` (only the files listed there).
   The files stay out of git; ``SHA256SUMS.txt`` lists their hashes.
 - Licence: NVIDIA RTX SDKs License (``LICENSE.txt``): the runtime may ship inside an application, for NVIDIA GPUs only,
   with attribution; a notice to NVIDIA before a commercial release.
-- Used for: DLSS Ray Reconstruction as the NVIDIA denoiser of the path-traced irradiance (GI.Denoiser=2).
+- Used for: DLSS Ray Reconstruction as the NVIDIA denoiser of the path-traced irradiance (GI.Denoiser=2); DLSS Super
+  Resolution (nvngx_dlss.dll, nvsdk_ngx_d.lib) for a game that upscales its own frame (OpenRFG64 VOM).
 "@ | Set-Content -Encoding UTF8 (Join-Path $target 'UPSTREAM.md')
 Write-Host "DLSS SDK $Tag files in $target ($($files.Count) files); hashes in SHA256SUMS.txt."

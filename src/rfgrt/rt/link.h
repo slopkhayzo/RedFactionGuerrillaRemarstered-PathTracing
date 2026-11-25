@@ -15,8 +15,9 @@
 // rfgrt_host.exe (64-bit), linked by named shared memory; a 64-bit rfg.exe runs the core on a thread of this process
 // instead (RFGRT_LOCAL_CORE builds). Either way the protocol is rfgrt_ipc.h's.
 //
-// The core starts once, at the first mesh the game creates (or the first frame, without the mirror), and lives until
-// the game ends or the core dies; it is never restarted, since the mirror it holds cannot be sent again.
+// The core starts at the first mesh the game creates (or the first frame, without the mirror), and lives until the game
+// ends or the core dies. A game that switches path tracing off stops it (stop(): core/active.h) and starts another
+// later, which the scene mirror then gives every live mesh again (mirror/geometry.h).
 namespace rtlink {
 
 struct Options {
@@ -41,6 +42,8 @@ struct Options {
     int gi_history = 24;
     int gi_filter_radius = 3;
     float gi_bounce = 1.0f;
+    float gi_sun_bounce_albedo = 0.0f;  // GI.SunBounceAlbedo (rfgrt_ipc::Block::gi_sun_bounce_albedo)
+    float gi_shade_bounce_albedo = 0.0f;  // GI.ShadeBounceAlbedo (rfgrt_ipc::Block::gi_shade_bounce_albedo)
     float gi_sky = 1.0f;
     bool gi_cache = true;  // the world radiance cache (GI.Cache)
     bool gi_glass = true;  // the glass's light (GI.Glass): a texture the core writes, the patched glass shader reads at t17
@@ -49,8 +52,10 @@ struct Options {
     bool frosted_glass = true;    // the translucent glass diffuses the light through it (GI.FrostedGlass)
     bool window_tint = true;      // the clear glass tints the sun's light through it (GI.WindowTint): a texture at t20
     bool tlas_fast_trace = true;  // the TLAS built for fast tracing (Mirror.TlasFastTrace)
+    bool dred = true;             // the core's device keeps its removed-device data (Host.Dred)
     float terrain_albedo[3] = {0.032f, 0.010f, 0.002f};  // what the rays take for the terrain's albedo (GI.TerrainAlbedo)
     int gi_denoiser = 2;  // the GI's denoiser (GI.Denoiser: 0 one pass, 1 wavelet, 2 Ray Reconstruction)
+    int dlss_mode = 1;    // Ray Reconstruction's mode (DLSS.Mode; rfgrt_ipc::Block::dlss_mode)
     bool fog = false;     // the volumetric fog (Fog.Enabled, with GI): a texture the core writes, the plugin blends
     float fog_sun_share = 0.65f;
     float fog_anisotropy = 0.25f;
@@ -76,6 +81,15 @@ public:
     // session is ending, and the render thread may still be using the link (ring writes fail from now on). The host
     // process ends with the game in any case (job object).
     void request_stop(uint32_t wait_ms);
+    // Stops the core and releases all the link holds (the shared region, fences, frame textures, events, threads), so
+    // that start() starts a new core: path tracing switched off (core/active.h). Call it once no thread but the scene
+    // ring's writers uses the link (path tracing off, its frame work finished); those are waited out. True when the
+    // core ended within `wait_ms`; otherwise it keeps what it may still read and no core starts again.
+    bool stop(uint32_t wait_ms);
+
+    // DLSS's mode (rfgrt_ipc::Block::dlss_mode), for the cores that start from now on and the one running, which switches
+    // at its next frame. Any thread.
+    void set_dlss_mode(int mode);
 
     bool started() const { return started_.load(); }
     // The core has published fence B and reads the ring. Render thread (opens fence B the first time).
@@ -140,6 +154,8 @@ public:
     // ring stayed full.
     bool ring_write(uint64_t bytes, void (*fill)(uint8_t* dst, void* ctx), void* ctx, uint32_t wait_ms = 3000);
     uint64_t ring_max_record() const { return block_ ? block_->ring_bytes / 2 : 0; }
+    // The largest record a core's ring takes, also while none runs (a mesh kept for a later core: mirror/geometry.h).
+    uint64_t ring_max_record_planned() const;
     // A record was dropped because the core stopped reading: the mirror is incomplete from then on.
     bool ring_stalled() const { return ring_stalled_.load(); }
     struct RingStats {

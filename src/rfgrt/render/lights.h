@@ -32,5 +32,7 @@ ID3D11ShaderResourceView* t15_override();
 // From the shader hooks: the light-pass patch (false: create the shader as it is).
 bool patch_pixel_shader(const void* code, size_t size, std::vector<uint8_t>* out);
 void report(bool at_exit);
+// Path tracing switched off (core/active.h), before the core stops: the masks given to lights go back.
+void on_core_stop();
 
 }  // namespace lights

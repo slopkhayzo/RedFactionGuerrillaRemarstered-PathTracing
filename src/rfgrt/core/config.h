@@ -27,6 +27,7 @@ struct Config {
     std::wstring host_path;       // empty: <plugin folder>\rfgrt\rfgrt_host.exe
     int ring_mb = 32;             // the scene ring between the plugin and the core (rounded up to a power of two)
     double host_wait_ms = 50.0;   // the most a frame waits for the core to queue it (a miss: the core's last result)
+    bool host_dred = true;        // the core's device keeps Direct3D 12's removed-device data, logged if it is lost
 
     // [Mirror]
     bool mirror_enabled = true;   // with the core: every mesh the game creates goes to the core (acceleration structures)
@@ -67,10 +68,24 @@ struct Config {
     int gi_history = 24;           // the most frames averaged
     int gi_filter_radius = 3;      // the spatial filter's radius in pixels
     double gi_bounce = 1.0;        // the bounced light's scale: taste, 1 is as traced
+    // The least albedo a sunlit surface bounces the sun with (GI.SunBounceAlbedo): the game's textures are authored dark
+    // under a very bright sun (its terrain sends on about 0.03 of the sun it gets, real ground 0.15 to 0.3), so the light
+    // sunlit surfaces bounce is scaled as if no material were darker than this (at most 32 times); 0: as the game draws
+    // them. Only the sunlit surfaces' light: the shaded ones' stays as traced.
+    double gi_sun_bounce_albedo = 0.2;
+    // The least albedo a surface in shade passes on the light it gets with (GI.ShadeBounceAlbedo): the second and later
+    // bounces (an overhang's ceiling onto its floor, the light through a room), scaled as GI.SunBounceAlbedo scales the
+    // sunlit surfaces' (at most 32 times); at most 0.5, as those bounces feed back; 0: as the game draws them. Equal to
+    // GI.SunBounceAlbedo, the rays need not ask whether the sun reaches what they hit.
+    double gi_shade_bounce_albedo = 0.2;
     double gi_sky_drawn = 1.0;    // the sky rays that get out see: 0 the game's ambient colour, 1 the drawn sky's colour at
                                   // the ambient's brightness, 2 the drawn sky as it is (about 4x darker); between: blends
     int gi_denoiser = 2;          // the GI's denoiser: 0 one 7x7 pass, 1 an edge-avoiding wavelet over ~61 x 61 pixels, 2 DLSS
                                   // Ray Reconstruction (NVIDIA RTX; elsewhere, and in builds without the SDK, the wavelet)
+    int dlss_mode = 1;            // DLSS.Mode, with Denoiser=2: 0 off (the wavelet), 1 DLAA, 2 quality, 3 balanced,
+                                  // 4 performance, 5 ultra performance (the GI traced at a share of the frame, upscaled)
+    bool fg_enabled = false;      // FrameGeneration.Enabled: DLSS Frame Generation (64-bit; present/presenter.h)
+    bool fg_presenter = false;    // FrameGeneration.Presenter: the presenter without generation (a test of its presents)
     bool gi_cache = true;         // the world radiance cache: the light of surfaces seen on screen, for rays hitting them later
     bool gi_glass = true;         // the game's plain glass (windows, shards) lit by the path tracer: its shadow, the light
                                   // around it (patch/glass.h; 0: the glass's own light, no shadow)
@@ -89,6 +104,21 @@ struct Config {
                                    // is the game's colour
     double fog_anisotropy = 0.25;  // how much more of the sun's share the fog scatters toward the sun than away from it
                                    // (Henyey-Greenstein g: 0 even; the shafts stand out more looking toward the sun)
+
+    // [Tonemap] the game's tone mapping while path tracing (the game's own renderer keeps its look): the bloom's strength
+    // (1 the game's, 0 none: the glow it spreads around bright parts made a lit hole or window look like a lamp)
+    double tonemap_bloom = 0.0;
+    // how far the eye adapts to a scene darker than its time of day's base (Tonemap.EyeAdaptationDark: 1 all the way, as
+    // eyes do; below 0 the game's amount, 0.3 to 0.5, which a path-traced room 10 to 30 times darker than the game's flat
+    // fill left nearly black); brighter scenes keep the game's (patch/eye_adaption.h)
+    double tonemap_eye_adaptation_dark = 1.0;
+
+    // [Particles] while path tracing, the particles the game draws over everything (always on top: the camera's wind
+    // dust) drawn with the sky instead, behind every world object (render/sky_particles.h); false: the game's
+    bool particles_always_on_top_with_sky = true;
+    // the effects (the start of their names, comma separated) whose particles are drawn with the sky too: the wind's
+    // gusts and dust devils (env_gust_a/b, env_gust_devil_a), which drift through walls; empty: none
+    std::string particles_with_sky_effects = "env_gust,env_dust_camera";
 
     // [Reflections] path-traced reflections in place of the lit shaders' specular ambient (with the core, Host.Mode=3)
     bool refl_enabled = false;
@@ -132,6 +162,10 @@ struct Config {
                                   // own lighting and shadows, for comparing (the core keeps running; 0: none)
     std::wstring input_script;    // scripted mouse and keyboard input (test/input_script.h)
     int time_of_day = -1;         // the game clock set to this hour once gameplay starts, and held there (-1: the save's)
+    int test_dlss_cycle_s = 0;    // Test.DlssCycle: every this many gameplay seconds the next DLSS mode (1 to 5, then 0), as
+                                  // a game's DLSS setting changes it while playing (0: never)
+    int test_fg_cycle_s = 0;      // Test.FrameGenerationCycle: every this many gameplay seconds frame generation switched
+                                  // (on, off, ...), as a game's setting does while playing (0: never)
     std::string wrecking_crew;    // Test.WreckingCrew: main menu -> Wrecking Crew -> this map (its file name, as
                                   // wcdlc4, or its index; "current": the menu's) -> the match, instead of a save
 };

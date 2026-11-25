@@ -118,6 +118,13 @@ if(RFGRT_X64)
     target_compile_definitions(shaderpatch PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
     target_compile_options(shaderpatch PRIVATE /W4 /permissive- /utf-8 /Zi)
     target_link_libraries(shaderpatch PRIVATE d3d11 d3dcompiler)
+
+    # OpenRFG64's names table, for a game that builds the plugin and writes the table beside it after each link
+    # (tools/names_table/main.cpp, src/shared/openrfg64_column.h): rfgrt_names <OpenRFG.exe> <rfgrt.names>.
+    add_executable(rfgrt_names tools/names_table/main.cpp src/shared/openrfg64_column.cpp)
+    target_include_directories(rfgrt_names PRIVATE src/rfgrt src/shared)
+    target_compile_definitions(rfgrt_names PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
+    target_compile_options(rfgrt_names PRIVATE /W4 /permissive- /utf-8)
 endif()
 
 # --- the plugin --------------------------------------------------------------------------------------------------------
@@ -136,8 +143,11 @@ add_library(rfgrt SHARED
     src/rfgrt/core/config.cpp
     src/rfgrt/core/session.cpp
     src/rfgrt/core/build_check.cpp
+    src/rfgrt/core/active.cpp
     src/rfgrt/core/gameloop.cpp
     src/rfgrt/game/rfg.cpp
+    src/rfgrt/game/openrfg64.cpp
+    src/shared/openrfg64_column.cpp
     src/rfgrt/hooks/hooks.cpp
     src/rfgrt/harness/screenshot.cpp
     src/rfgrt/harness/shader_dump.cpp
@@ -147,6 +157,7 @@ add_library(rfgrt SHARED
     src/rfgrt/render/seam.cpp
     src/rfgrt/render/gi.cpp
     src/rfgrt/render/lights.cpp
+    src/rfgrt/render/sky_particles.cpp
     src/rfgrt/rt/link.cpp
     src/rfgrt/mirror/geometry.cpp
     src/rfgrt/mirror/geometry_census.cpp
@@ -160,6 +171,9 @@ add_library(rfgrt SHARED
     src/rfgrt/patch/sun_tint.cpp
     src/rfgrt/patch/spec_occlusion.cpp
     src/rfgrt/patch/fog.cpp
+    src/rfgrt/patch/eye_adaption.cpp
+    src/rfgrt/present/presenter.cpp
+    src/rfgrt/present/framegen.cpp
     ${PLUGIN_SHADERS})
 set_target_properties(rfgrt PROPERTIES SUFFIX ".asi")
 target_include_directories(rfgrt PRIVATE src/rfgrt src/shared ${SHADER_OUT})
@@ -169,7 +183,40 @@ target_link_options(rfgrt PRIVATE /DEBUG:FULL /OPT:REF /OPT:ICF /INCREMENTAL:NO)
 target_link_libraries(rfgrt PRIVATE minhook d3d11 dxgi)
 if(RFGRT_X64)
     target_compile_definitions(rfgrt PRIVATE RFGRT_LOCAL_CORE)
-    target_link_libraries(rfgrt PRIVATE rtcore)
+    target_link_libraries(rfgrt PRIVATE rtcore d3d12)  # (d3d12: the presenter's own device, present/presenter.cpp)
+endif()
+
+# DLSS Frame Generation (the presenter, x64 only: Streamline is 64-bit): NVIDIA's Streamline SDK in
+# third_party/streamline, out of git, fetched by tools/fetch_streamline.ps1. Its runtime DLLs go next to the plugin,
+# which loads them from there; without them the plugin builds with frame generation unavailable.
+set(RFGRT_STREAMLINE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/streamline")
+set(RFGRT_STREAMLINE_RUNTIMES sl.interposer.dll sl.common.dll sl.dlss_g.dll sl.reflex.dll sl.pcl.dll nvngx_dlssg.dll)
+set(RFGRT_STREAMLINE_FOUND ${RFGRT_X64})
+if(NOT EXISTS "${RFGRT_STREAMLINE_DIR}/include/sl.h")
+    set(RFGRT_STREAMLINE_FOUND FALSE)
+endif()
+foreach(runtime IN LISTS RFGRT_STREAMLINE_RUNTIMES)
+    if(NOT EXISTS "${RFGRT_STREAMLINE_DIR}/bin/x64/${runtime}")
+        set(RFGRT_STREAMLINE_FOUND FALSE)
+    endif()
+endforeach()
+if(RFGRT_STREAMLINE_FOUND)
+    message(STATUS "Streamline SDK found: the plugin has DLSS Frame Generation")
+    target_include_directories(rfgrt SYSTEM PRIVATE "${RFGRT_STREAMLINE_DIR}/include")
+    target_compile_definitions(rfgrt PRIVATE RFGRT_STREAMLINE=1)
+    # the presenter's two passes (present/presenter.cpp): the motion from the depth, the UI layer
+    set(PRESENT_SHADERS)
+    dxc_shader(PRESENT_SHADERS fg_motion_cs cs_6_0 ${CMAKE_CURRENT_SOURCE_DIR}/src/rfgrt/present/fg_motion.hlsl)
+    dxc_shader(PRESENT_SHADERS fg_ui_cs cs_6_0 ${CMAKE_CURRENT_SOURCE_DIR}/src/rfgrt/present/fg_ui.hlsl)
+    target_sources(rfgrt PRIVATE ${PRESENT_SHADERS})
+    foreach(runtime IN LISTS RFGRT_STREAMLINE_RUNTIMES)
+        add_custom_command(TARGET rfgrt POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${RFGRT_STREAMLINE_DIR}/bin/x64/${runtime}"
+                    "$<TARGET_FILE_DIR:rfgrt>/${runtime}"
+            VERBATIM)
+    endforeach()
+elseif(RFGRT_X64)
+    message(STATUS "Streamline SDK not found (tools/fetch_streamline.ps1): the plugin without frame generation")
 endif()
 
 # Version resources (src/shared/version.rc.in).

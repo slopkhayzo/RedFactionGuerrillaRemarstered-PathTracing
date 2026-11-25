@@ -24,6 +24,7 @@ std::wstring g_pending;  // path of the requested screenshot, empty when none
 
 bool(__cdecl* o_end_frame)(uint8_t*);
 void (*g_overlay)(uint8_t*, IDXGISwapChain*) = nullptr;
+void (*g_end_frame)(IDXGISwapChain*) = nullptr;
 
 // --- PNG writer: RGB8, zlib stream of stored (uncompressed) deflate blocks.
 
@@ -207,6 +208,11 @@ void capture(IDXGISwapChain* sc, const std::wstring& path) {
 // keen::graphics::endFrame(GraphicsSystem*) presents the finished frame; the back buffer is copied just before, on the
 // render thread that owns the immediate context.
 bool __cdecl d_end_frame(uint8_t* graphics) {
+    if (g_end_frame && graphics) {
+        auto* rsc = rfg::field<uint8_t*>(graphics, rfg::off::GraphicsSystem_pCurrentSwapChain);
+        auto* sc = rsc ? rfg::field<IDXGISwapChain*>(rsc, rfg::off::RenderSwapChain_pSwapChain) : nullptr;
+        if (sc) g_end_frame(sc);
+    }
     if (g_overlay && graphics) {
         auto* rsc = rfg::field<uint8_t*>(graphics, rfg::off::GraphicsSystem_pCurrentSwapChain);
         auto* sc = rsc ? rfg::field<IDXGISwapChain*>(rsc, rfg::off::RenderSwapChain_pSwapChain) : nullptr;
@@ -235,6 +241,7 @@ bool __cdecl d_end_frame(uint8_t* graphics) {
 }  // namespace
 
 void set_overlay(void (*draw)(uint8_t*, IDXGISwapChain*)) { g_overlay = draw; }
+void set_end_frame(void (*fn)(IDXGISwapChain*)) { g_end_frame = fn; }
 
 bool install() {
     static bool installed = false;
