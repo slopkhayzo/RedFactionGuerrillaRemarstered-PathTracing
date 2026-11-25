@@ -43,6 +43,7 @@ struct Options {
     int gi_filter_radius = 3;
     float gi_bounce = 1.0f;
     float gi_sun_bounce_albedo = 0.0f;  // GI.SunBounceAlbedo (rfgrt_ipc::Block::gi_sun_bounce_albedo)
+    float gi_shade_bounce_albedo = 0.0f;  // GI.ShadeBounceAlbedo (rfgrt_ipc::Block::gi_shade_bounce_albedo)
     float gi_sky = 1.0f;
     bool gi_cache = true;  // the world radiance cache (GI.Cache)
     bool gi_glass = true;  // the glass's light (GI.Glass): a texture the core writes, the patched glass shader reads at t17

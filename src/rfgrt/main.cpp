@@ -117,6 +117,10 @@ void init() {
     link.gi_bounce = float(cfg.gi_bounce >= 0.0 ? cfg.gi_bounce : 0.0);
     link.gi_sun_bounce_albedo =
         float(cfg.gi_sun_bounce_albedo < 0.0 ? 0.0 : cfg.gi_sun_bounce_albedo > 1.0 ? 1.0 : cfg.gi_sun_bounce_albedo);
+    // The shaded surfaces' light feeds back through the next frames' bounces: at most 0.5, so each round passes on at
+    // most half of the last.
+    link.gi_shade_bounce_albedo =
+        float(cfg.gi_shade_bounce_albedo < 0.0 ? 0.0 : cfg.gi_shade_bounce_albedo > 0.5 ? 0.5 : cfg.gi_shade_bounce_albedo);
     link.gi_sky = float(cfg.gi_sky >= 0.0 ? cfg.gi_sky : 0.0);
     link.gi_cache = cfg.gi_cache;
     link.gi_glass = cfg.gi_glass;

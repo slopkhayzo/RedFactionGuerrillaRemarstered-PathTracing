@@ -73,6 +73,11 @@ struct Config {
     // sunlit surfaces bounce is scaled as if no material were darker than this (at most 32 times); 0: as the game draws
     // them. Only the sunlit surfaces' light: the shaded ones' stays as traced.
     double gi_sun_bounce_albedo = 0.2;
+    // The least albedo a surface in shade passes on the light it gets with (GI.ShadeBounceAlbedo): the second and later
+    // bounces (an overhang's ceiling onto its floor, the light through a room), scaled as GI.SunBounceAlbedo scales the
+    // sunlit surfaces' (at most 32 times); at most 0.5, as those bounces feed back; 0: as the game draws them. Equal to
+    // GI.SunBounceAlbedo, the rays need not ask whether the sun reaches what they hit.
+    double gi_shade_bounce_albedo = 0.2;
     double gi_sky_drawn = 1.0;    // the sky rays that get out see: 0 the game's ambient colour, 1 the drawn sky's colour at
                                   // the ambient's brightness, 2 the drawn sky as it is (about 4x darker); between: blends
     int gi_denoiser = 2;          // the GI's denoiser: 0 one 7x7 pass, 1 an edge-avoiding wavelet over ~61 x 61 pixels, 2 DLSS

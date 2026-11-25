@@ -311,7 +311,7 @@ struct GiConstants {
     CompareConstants base;
     float ambient[4], back_ambient[4], sun_color[4];  // the game's, in its shaders' units (frame_scene.h)
     float gi[4];                                        // rays a pixel, their length, the albedo they meet, max frames
-    float gi2[4];                                       // x: the bounced light's scale, y: the sky's, z: GI.SunBounceAlbedo
+    float gi2[4];                                       // x: the bounced light's scale, y: the sky's, z: GI.SunBounceAlbedo, w: GI.ShadeBounceAlbedo
     float world[4];                                     // xyz: the render offset; w: 1 with the radiance cache
     float sky_probe[4];  // x: 1 with the drawn sky; y: the cosine of the angle about the sun it leaves out; z: GI.SkyDrawn
     float fog[4];        // the game's fog: its density a, height falloff b, start c (fogDistance's y, x, w); w: 1
@@ -1789,7 +1789,8 @@ int run(const RunParams& p) {
                         g.gi[3] = float(b->gi_history > 1 ? b->gi_history : 1);
                         g.gi2[0] = b->gi_bounce;
                         g.gi2[1] = b->gi_sky;
-                        g.gi2[2] = b->gi_sun_bounce_albedo;  // GI.SunBounceAlbedo (trace_common.hlsli sun_bounce)
+                        g.gi2[2] = b->gi_sun_bounce_albedo;  // GI.SunBounceAlbedo (trace_common.hlsli bounce_scale)
+                        g.gi2[3] = b->gi_shade_bounce_albedo;  // GI.ShadeBounceAlbedo (the same)
                         memcpy(g.world, h->render_offset, sizeof(float) * 3);
                         g.world[3] = cacheOn ? 1.0f : 0.0f;
                         g.sky_probe[0] = skyOn ? 1.0f : 0.0f;
