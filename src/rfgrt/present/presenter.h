@@ -20,5 +20,9 @@ bool install(const Config& cfg);
 // Frame generation wanted or not (rfgrt_set_frame_generation; FrameGeneration.Enabled at start): from the next present.
 // Without it (and without FrameGeneration.Presenter) the game's swap chain presents again.
 void set_wanted(bool on);
+// The plugins' scene's end: the main scene's rl_scene_renderer::render returned, its commands run (the frame drawn, the
+// HUD not yet): the frame before the HUD, the depth and the camera taken for frame generation, as OpenRFG64 VOM's seam
+// after the scene does (there this does nothing). Render thread.
+void scene_rendered(void* scene_renderer, void* camera);
 
 }  // namespace presenter

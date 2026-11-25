@@ -1073,6 +1073,11 @@ void set_wanted(bool on) {
     if (s.wanted.exchange(on) != on) LOG("presenter: frame generation %s", on ? "wanted" : "off");
 }
 
+void scene_rendered(void* scene_renderer, void* camera) {
+    if (s.on_seam) return;  // OpenRFG64 VOM: its seam after the scene takes them
+    capture_scene(static_cast<uint8_t*>(scene_renderer), static_cast<uint8_t*>(camera));
+}
+
 }  // namespace presenter
 
 #else  // the 32-bit plugin: no presenter (Streamline is 64-bit)
@@ -1084,6 +1089,7 @@ bool install(const Config& cfg) {
     return true;
 }
 void set_wanted(bool) {}
+void scene_rendered(void*, void*) {}
 
 }  // namespace presenter
 
