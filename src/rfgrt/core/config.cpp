@@ -106,7 +106,7 @@ Config load_config(const std::wstring& ini) {
     c.gi_history = get_int(ini, L"GI", L"History", 24);
     c.gi_filter_radius = get_int(ini, L"GI", L"FilterRadius", 3);
     c.gi_bounce = get_double(ini, L"GI", L"Bounce", 1.0);
-    c.gi_sun_bounce_albedo = get_double(ini, L"GI", L"SunBounceAlbedo", 0.1);
+    c.gi_sun_bounce_albedo = get_double(ini, L"GI", L"SunBounceAlbedo", 0.2);
     c.gi_cache = get_int(ini, L"GI", L"Cache", 1) != 0;
     c.gi_glass = get_int(ini, L"GI", L"Glass", 1) != 0;
     c.gi_frosted_glass = get_int(ini, L"GI", L"FrostedGlass", 1) != 0;

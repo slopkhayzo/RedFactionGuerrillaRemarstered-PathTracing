@@ -553,12 +553,12 @@ float3 shade_hit2(float3 origin, float3 dir, float t, uint instance, uint geomet
 // GI.SunBounceAlbedo (gi2.z): the game's textures are authored dark under a very bright sun (its terrain sends on about
 // 0.03 of the sun it gets, where real ground sends on 0.15 to 0.3), so what lights the shade beside sunlit ground, its
 // bounce, came out far weaker than the game's own fill. The light a sunlit surface sends on is scaled as if its material
-// (its mean albedo; the terrain's: GI.TerrainAlbedo) were no darker than gi2.z, at most 8 times; 1 for a surface in
-// shade (its light, the sky's and the bounces', stays as traced: the bounces' feedback through the game's colour stays
-// where it was) and with gi2.z 0. Whether the sun reaches it: a ray toward the sun from just before the hit (its own
+// (its mean albedo; the terrain's: GI.TerrainAlbedo) were no darker than gi2.z, at most 32 times (the terrain's mean is
+// 0.014: at most 8 times stopped its floor at 0.11); 1 for a surface in shade (its light, the sky's and the bounces',
+// stays as traced: the bounces' feedback through the game's colour stays where it was) and with gi2.z 0. Whether the sun reaches it: a ray toward the sun from just before the hit (its own
 // surface stops it when it faces away).
 float sun_bounce_scale(float mean) {
-    return gi2.z > mean ? min(gi2.z / max(mean, 1e-3), 8.0) : 1.0;
+    return gi2.z > mean ? min(gi2.z / max(mean, 1e-3), 32.0) : 1.0;
 }
 
 // The mean albedo's luminance of what a ray hit, as hit_surface gives it (s.mean), without the triangle: its material's
