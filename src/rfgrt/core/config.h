@@ -105,6 +105,14 @@ struct Config {
     double fog_anisotropy = 0.25;  // how much more of the sun's share the fog scatters toward the sun than away from it
                                    // (Henyey-Greenstein g: 0 even; the shafts stand out more looking toward the sun)
 
+    // [Tonemap] the game's tone mapping while path tracing (the game's own renderer keeps its look): the bloom's strength
+    // (1 the game's, 0 none: the glow it spreads around bright parts made a lit hole or window look like a lamp)
+    double tonemap_bloom = 0.0;
+    // how far the eye adapts to a scene darker than its time of day's base (Tonemap.EyeAdaptationDark: 1 all the way, as
+    // eyes do; below 0 the game's amount, 0.3 to 0.5, which a path-traced room 10 to 30 times darker than the game's flat
+    // fill left nearly black); brighter scenes keep the game's (patch/eye_adaption.h)
+    double tonemap_eye_adaptation_dark = 1.0;
+
     // [Reflections] path-traced reflections in place of the lit shaders' specular ambient (with the core, Host.Mode=3)
     bool refl_enabled = false;
     double refl_length = 100.0;    // the rays' length in metres

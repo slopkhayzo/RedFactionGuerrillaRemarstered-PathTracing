@@ -170,6 +170,7 @@ add_library(rfgrt SHARED
     src/rfgrt/patch/sun_tint.cpp
     src/rfgrt/patch/spec_occlusion.cpp
     src/rfgrt/patch/fog.cpp
+    src/rfgrt/patch/eye_adaption.cpp
     src/rfgrt/present/presenter.cpp
     src/rfgrt/present/framegen.cpp
     ${PLUGIN_SHADERS})

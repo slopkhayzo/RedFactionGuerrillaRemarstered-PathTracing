@@ -76,6 +76,13 @@ fn rl_scene_renderer::render
 fn rl_scene_renderer::clb_render
 fn rl_scene_renderer::render_shadow_pass
 fn rl_scene_renderer::create_render_textures
+# the HDR state rl_scene_renderer::render gets: its tone map, eye adaptation and bloom (Tonemap.*, in PATH TRACED)
+size rl_hdr_state as HdrState_size
+field rl_hdr_state::m_lum_range as HdrState_lumRange
+field rl_hdr_state::m_lum_offset as HdrState_lumOffset
+field rl_hdr_state::m_eye_adaption_base as HdrState_eyeAdaptionBase
+field rl_hdr_state::m_eye_adaption_amount as HdrState_eyeAdaptionAmount
+field rl_hdr_state::m_bloom_amount as HdrState_bloomAmount
 fn rl_scene_renderer::set_shadow_states
 field rl_renderer::m_pCommandWriter as Renderer_commandWriter
 field rl_renderer::m_commonFragmentData as Renderer_commonFragmentData

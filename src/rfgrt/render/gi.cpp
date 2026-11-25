@@ -14,6 +14,7 @@
 #include "game/rfg.h"
 #include "hooks/hooks.h"
 #include "patch/ambient.h"
+#include "patch/eye_adaption.h"
 #include "patch/fog.h"
 #include "patch/glass.h"
 #include "patch/shadow_floor.h"
@@ -64,6 +65,8 @@ bool g_fog = false;
 std::atomic<ID3D11ShaderResourceView*> g_bind_fog{nullptr};
 std::atomic<bool> g_fog_armed{false};
 std::atomic<uint32_t> g_fog_patched{0}, g_fog_lit{0}, g_fog_unsupported{0};
+bool g_eye = false;  // Tonemap.EyeAdaptationDark set (0 or more)
+std::atomic<uint32_t> g_eye_patched{0}, g_eye_mads{0}, g_eye_unsupported{0};
 std::atomic<uint64_t> g_fog_bound{0};  // lit passes that got the core's fog at t18
 uint64_t g_fog_blended = 0, g_fog_size_differs = 0, g_fog_unarmed = 0;
 
@@ -175,6 +178,7 @@ bool install(const Config& cfg) {
     g_glass = cfg.gi_enabled && cfg.gi_glass && cfg.host_enabled && cfg.host_mode == 3;
     g_fog = cfg.gi_enabled && cfg.fog_enabled && cfg.gi_debug == 0 && cfg.host_enabled && cfg.host_mode == 3;
     g_tint = cfg.gi_enabled && cfg.gi_window_tint && cfg.gi_debug == 0 && cfg.host_enabled && cfg.host_mode == 3;
+    g_eye = cfg.tonemap_eye_adaptation_dark >= 0.0;
     if (!g_on && !lights::enabled()) return true;  // the hook below serves both (lights::install comes first)
     if (g_on) session::add_flush_handler(&report);
     const bool ok = hooks::create_this(rfg::rva::rl_scene_renderer__set_shadow_states, &d_set_shadow_states, &o_set_shadow_states,
@@ -346,6 +350,22 @@ bool patch_fog(const void* code, size_t size, std::vector<uint8_t>* out) {
     return false;
 }
 
+bool patch_tonemap(const void* code, size_t size, std::vector<uint8_t>* out) {
+    if (!g_eye) return false;
+    std::vector<uint8_t> patched;
+    eye_adaption::Report er;
+    const eye_adaption::Result e = eye_adaption::patch(code, size, float(g_cfg.tonemap_eye_adaptation_dark), &patched, &er);
+    if (e == eye_adaption::Result::Patched) {
+        ++g_eye_patched;
+        g_eye_mads += er.mads;
+        *out = std::move(patched);
+        return true;
+    }
+    if (e == eye_adaption::Result::Unsupported && g_eye_unsupported.fetch_add(1) < 4)
+        LOG("gi: a shader's eye adaptation not patched: %s", er.reason.c_str());
+    return false;
+}
+
 bool patch_pixel_shader(const void* code, size_t size, std::vector<uint8_t>* out) {
     if (!g_on) return false;
     // the glass's light first: a shader of the plain glass's make (rfg-glass, rfg-glass-etched) takes it in place of the
@@ -444,6 +464,9 @@ void report(bool) {
             fog::kFogSlot, g_fog_patched.load(), g_fog_lit.load(), g_fog_unsupported.load(),
             static_cast<unsigned long long>(g_fog_bound.load()), static_cast<unsigned long long>(g_fog_blended),
             static_cast<unsigned long long>(g_fog_unarmed));
+    if (g_eye)
+        LOG("gi: the eye's adaptation below its base %g (Tonemap.EyeAdaptationDark) in %u shaders (%u adaptations; %u not "
+            "patched)", g_cfg.tonemap_eye_adaptation_dark, g_eye_patched.load(), g_eye_mads.load(), g_eye_unsupported.load());
     if (g_floor)
         LOG("gi: the sun's specular in full shadow %.3g where traced (the game's 0.05 elsewhere), patched into %u shaders (%u not); "
             "sun terms that never met the shadow shadowed in %u",

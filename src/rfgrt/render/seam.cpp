@@ -5,7 +5,9 @@
 #include <intrin.h>
 
 #include <atomic>
+#include <cmath>
 #include <cstdint>
+#include <cstring>
 
 #include "core/active.h"
 #include "core/config.h"
@@ -640,10 +642,42 @@ DWORD WINAPI snapshot_worker_main(LPVOID) {
     }
 }
 
+// Tonemap.*: the HDR state (rl_hdr_state) a scene renderer gets while path tracing: the game's (its time of day's, per
+// district), its bloom scaled by Tonemap.Bloom. rl_hdr_compositor reads it for the luminance's adaptation, the bloom's
+// passes and the final composite (1 - exp(-k (8 x scene + bloom x Bloom_amount))). The game's values are logged when
+// they change (at most every 2 s).
+void* tonemap_state(void* hdr) {
+    static thread_local uint8_t copy[256];
+    const uint32_t size = rfg::off::HdrState_size;
+    if (!hdr || size == 0 || size > sizeof(copy)) return hdr;
+    {
+        static float logged[5] = {-1.0f, -1.0f, -1.0f, -1.0f, -1.0f};
+        static int64_t logged_at = 0;
+        const float now[5] = {rfg::field<float>(hdr, rfg::off::HdrState_eyeAdaptionBase),
+                              rfg::field<float>(hdr, rfg::off::HdrState_eyeAdaptionAmount),
+                              rfg::field<float>(hdr, rfg::off::HdrState_lumRange),
+                              rfg::field<float>(hdr, rfg::off::HdrState_lumOffset),
+                              rfg::field<float>(hdr, rfg::off::HdrState_bloomAmount)};
+        bool changed = false;
+        for (int i = 0; i < 5; ++i) changed |= fabsf(now[i] - logged[i]) > 0.01f * fabsf(now[i]) + 1e-4f;
+        if (changed && session::ticks_to_ms(session::qpc() - logged_at) > 2000.0) {
+            memcpy(logged, now, sizeof(logged));
+            logged_at = session::qpc();
+            LOG("tonemap: the game's HDR state: eye adaption base %.4g amount %.4g, lum range %.4g offset %.4g, bloom %.4g "
+                "(path tracing: bloom x %g)", now[0], now[1], now[2], now[3], now[4], g_cfg.tonemap_bloom);
+        }
+    }
+    if (g_cfg.tonemap_bloom >= 1.0) return hdr;
+    memcpy(copy, hdr, size);
+    rfg::field<float>(copy, rfg::off::HdrState_bloomAmount) *= float(g_cfg.tonemap_bloom > 0.0 ? g_cfg.tonemap_bloom : 0.0);
+    return copy;
+}
+
 void __fastcall d_scene_render(RFG_THIS(void*, self), void* renderer, void* sim_renderer, void* scene, void* camera,
                                void* hdr, void* color_correct) {
     const active::Work work;  // (the whole render: the seam, the snapshot worker and the scene thread's passes)
     if (!work.on) return o_scene_render(self, renderer, sim_renderer, scene, camera, hdr, color_correct);
+    hdr = tonemap_state(hdr);
     t_scene_renderer = static_cast<uint8_t*>(self);
     t_frame = 0;
     if (!g_main_scene || g_main_scene == self) gi::on_render(static_cast<uint8_t*>(renderer), static_cast<uint8_t*>(scene));

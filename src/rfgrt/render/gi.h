@@ -46,6 +46,9 @@ bool lit_constants(LitConstants* out);
 // From the shader hooks, last, on the shader as patched so far (or the original): the game's fog left out where the
 // core's is (patch/fog.h). False: no change.
 bool patch_fog(const void* code, size_t size, std::vector<uint8_t>* out);
+// From the shader hooks, after the fog's: the eye's adaptation to a dark scene (rl_hdr's, patch/eye_adaption.h) with
+// Tonemap.EyeAdaptationDark, for path tracing. False: no change.
+bool patch_tonemap(const void* code, size_t size, std::vector<uint8_t>* out);
 void report(bool at_exit);
 // Path tracing switched off (core/active.h), before the core stops: none of its textures stays to be bound.
 void on_core_stop();

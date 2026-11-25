@@ -125,6 +125,12 @@ inline uint32_t GraphicsSystem_pImmediateContext = 0x25C;  // keen::GraphicsSyst
 inline uint32_t GraphicsSystem_immediateCommandBuffer = 0x2C8;  // keen::GraphicsSystem::immediateCommandBuffer: keen::GraphicsCommandBuffer
 inline uint32_t GraphicsSystem_pCurrentSwapChain = 0x20348;  // keen::GraphicsSystem::pCurrentSwapChain: keen::RenderSwapChain*
 inline uint32_t RenderSwapChain_pSwapChain = 0x13C;  // keen::RenderSwapChain::pSwapChain: IDXGISwapChain*
+inline uint32_t HdrState_size = 0x68;  // sizeof(rl_hdr_state)
+inline uint32_t HdrState_lumRange = 0x4;  // rl_hdr_state::m_lum_range: float
+inline uint32_t HdrState_lumOffset = 0x8;  // rl_hdr_state::m_lum_offset: float
+inline uint32_t HdrState_eyeAdaptionBase = 0x38;  // rl_hdr_state::m_eye_adaption_base: float
+inline uint32_t HdrState_eyeAdaptionAmount = 0x3C;  // rl_hdr_state::m_eye_adaption_amount: float
+inline uint32_t HdrState_bloomAmount = 0x48;  // rl_hdr_state::m_bloom_amount: float
 inline uint32_t Renderer_commandWriter = 0x440;  // rl_renderer::m_pCommandWriter: keen::GraphicsCommandWriter*
 inline uint32_t Renderer_commonFragmentData = 0x130;  // rl_renderer::m_commonFragmentData: keen::CommonFragmentShaderConstants
 inline uint32_t Renderer_commonVertexData = 0x30;  // rl_renderer::m_commonVertexData: keen::CommonVertexShaderConstants
@@ -337,6 +343,12 @@ inline constexpr RvaEntry kRvaTable[] = {
     {&off::GraphicsSystem_immediateCommandBuffer, {0x2C8, 0x2C8}},
     {&off::GraphicsSystem_pCurrentSwapChain, {0x20348, 0x20348}},
     {&off::RenderSwapChain_pSwapChain, {0x13C, 0x13C}},
+    {&off::HdrState_size, {0x68, 0x68}},
+    {&off::HdrState_lumRange, {0x4, 0x4}},
+    {&off::HdrState_lumOffset, {0x8, 0x8}},
+    {&off::HdrState_eyeAdaptionBase, {0x38, 0x38}},
+    {&off::HdrState_eyeAdaptionAmount, {0x3C, 0x3C}},
+    {&off::HdrState_bloomAmount, {0x48, 0x48}},
     {&off::Renderer_commandWriter, {0x440, 0x440}},
     {&off::Renderer_commonFragmentData, {0x130, 0x130}},
     {&off::Renderer_commonVertexData, {0x30, 0x30}},

@@ -95,6 +95,8 @@ HRESULT STDMETHODCALLTYPE d_create_ps(ID3D11Device* self, const void* code, SIZE
     bool changed = gi::patch_pixel_shader(code, size, &patched) || lights::patch_pixel_shader(code, size, &patched);
     // the game's fog, last, on the shader as patched so far (lit passes and lights' passes alike)
     if (gi::patch_fog(changed ? patched.data() : code, changed ? patched.size() : size, &patched)) changed = true;
+    // the eye's adaptation to a dark scene (rl_hdr's adaptation and bright pass)
+    if (gi::patch_tonemap(changed ? patched.data() : code, changed ? patched.size() : size, &patched)) changed = true;
     if (changed && g_two_versions && out) {  // both: the original for path tracing off, the patched one for on
         ID3D11PixelShader* original = nullptr;
         const HRESULT hr = o_create_ps(self, code, size, linkage, &original);
