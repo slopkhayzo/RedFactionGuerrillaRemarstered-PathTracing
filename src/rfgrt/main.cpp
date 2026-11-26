@@ -197,11 +197,8 @@ void init() {
         if (!presenter::install(fg, rows)) LOG("presenter hooks failed: no frame generation");
     }
     if (rows) {
-#if defined(_WIN64) && defined(RFGRT_STREAMLINE)
-        constexpr bool kFrameGeneration = true;
-#else
-        constexpr bool kFrameGeneration = false;  // (the 32-bit plugin has no presenter; a build without Streamline no DLSS-G)
-#endif
+        // (64-bit: built with Streamline; 32-bit: rfgrt_present.exe next to rfgrt_host.exe)
+        const bool kFrameGeneration = presenter::available();
         const display_rows::Actions actions{&rfgrt_set_dlss_mode, &rfgrt_set_frame_generation};
         display_rows::install(cfg, dir + L"\\rfgrt.ini", kFrameGeneration, actions);
     }

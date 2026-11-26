@@ -47,8 +47,11 @@ if ($Source -eq 'package') {
     $zip = $zips[-1]
     $pkg = Join-Path $run 'package'
     Expand-Archive -Path $zip.FullName -DestinationPath $pkg -Force
-    foreach ($rel in 'dinput8.dll', 'scripts\rfgrt.asi', 'scripts\rfgrt.ini', 'scripts\rfgrt\rfgrt_host.exe', 'scripts\rfgrt\nvngx_dlssd.dll') {
-        if (Test-Path (Join-Path $pkg $rel)) { $files[$rel] = Join-Path $pkg $rel }  # (the DLSS runtime: packages from 0.1.6)
+    foreach ($rel in 'dinput8.dll', 'scripts\rfgrt.asi', 'scripts\rfgrt.ini', 'scripts\rfgrt\rfgrt_host.exe', 'scripts\rfgrt\nvngx_dlssd.dll',
+                     'scripts\rfgrt\rfgrt_present.exe', 'scripts\rfgrt\sl.interposer.dll', 'scripts\rfgrt\sl.common.dll',
+                     'scripts\rfgrt\sl.dlss_g.dll', 'scripts\rfgrt\sl.reflex.dll', 'scripts\rfgrt\sl.pcl.dll', 'scripts\rfgrt\nvngx_dlssg.dll') {
+        # (the DLSS runtime: packages from 0.1.6; frame generation's presenter and Streamline: later ones)
+        if (Test-Path (Join-Path $pkg $rel)) { $files[$rel] = Join-Path $pkg $rel }
     }
     Write-Output "path tracer: the package $($zip.Name)"
 } else {
@@ -72,6 +75,15 @@ if ($Source -eq 'package') {
     $files['scripts\rfgrt\rfgrt_host.pdb'] = [IO.Path]::ChangeExtension($hostExe, '.pdb')
     $dlss = Join-Path (Split-Path $hostExe) 'nvngx_dlssd.dll'
     if (Test-Path $dlss) { $files['scripts\rfgrt\nvngx_dlssd.dll'] = $dlss }
+    # DLSS Frame Generation: the plugin's presenter (64-bit) and Streamline's runtime, when the build has them
+    $present = Join-Path (Split-Path $hostExe) 'rfgrt_present.exe'
+    if (Test-Path $present) {
+        $files['scripts\rfgrt\rfgrt_present.exe'] = $present
+        foreach ($sl in 'sl.interposer.dll', 'sl.common.dll', 'sl.dlss_g.dll', 'sl.reflex.dll', 'sl.pcl.dll', 'nvngx_dlssg.dll') {
+            $f = Join-Path (Split-Path $hostExe) $sl
+            if (Test-Path $f) { $files["scripts\rfgrt\$sl"] = $f }
+        }
+    }
     Write-Output "path tracer: the development build of $((Get-Item $asi).LastWriteTime)"
 }
 if ((Get-FileHash $files['dinput8.dll'] -Algorithm SHA256).Hash -ne $UalHash) { Write-Output 'the loader is not Ultimate ASI Loader 9.7.4'; exit 2 }

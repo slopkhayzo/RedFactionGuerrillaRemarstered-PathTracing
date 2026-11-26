@@ -11,9 +11,9 @@
 //                     rfg.exe inlines into each of its callers.
 //   DLSS              the path tracer's DLSS mode (off, DLAA, quality, balanced, performance, ultra performance): DLSS.Mode.
 //                     With path tracing running and Ray Reconstruction (GI.Denoiser=2) only; in game too, at once.
-//   FRAME GENERATION  DLSS Frame Generation: FrameGeneration.Enabled; in game too, at once, with either renderer. 64-bit:
-//                     the presenter's detour is then placed even when it starts off. The 32-bit plugin has no presenter:
-//                     greyed out.
+//   FRAME GENERATION  DLSS Frame Generation: FrameGeneration.Enabled; in game too, at once, with either renderer: the
+//                     presenter's detour is then placed even when it starts off. Greyed out where no presenter can run
+//                     (presenter::available: the 32-bit plugin without rfgrt_present.exe, a build without Streamline).
 // Accept applies them and writes them to rfgrt.ini; back asks before dropping changes, as for the game's own rows (the
 // game's changes_made). The captions and values go into the game's localization table, whose data has none of them.
 struct Config;

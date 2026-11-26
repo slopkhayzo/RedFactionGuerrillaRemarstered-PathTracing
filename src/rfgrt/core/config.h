@@ -86,6 +86,8 @@ struct Config {
                                   // 4 performance, 5 ultra performance (the GI traced at a share of the frame, upscaled)
     bool fg_enabled = false;      // FrameGeneration.Enabled: DLSS Frame Generation (64-bit; present/presenter.h)
     bool fg_presenter = false;    // FrameGeneration.Presenter: the presenter without generation (a test of its presents)
+    bool fg_test_focus = false;   // FrameGeneration.TestFocus: (the 32-bit plugin's rfgrt_present.exe) the focus answered as
+                                  // its window's always, so that DLSS-G generates in unattended runs (a test)
 
     // [Menu]
     bool menu_rows = true;        // Menu.Rows: the display menu's RENDERER, DLSS and FRAME GENERATION rows (menu/display_rows.h)

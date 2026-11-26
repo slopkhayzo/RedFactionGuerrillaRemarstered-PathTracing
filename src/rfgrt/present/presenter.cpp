@@ -1078,19 +1078,14 @@ void scene_rendered(void* scene_renderer, void* camera) {
     capture_scene(static_cast<uint8_t*>(scene_renderer), static_cast<uint8_t*>(camera));
 }
 
-}  // namespace presenter
-
-#else  // the 32-bit plugin: no presenter (Streamline is 64-bit)
-
-namespace presenter {
-
-bool install(const Config& cfg, bool) {
-    if (cfg.fg_enabled || cfg.fg_presenter) LOG("presenter: none in the 32-bit plugin (frame generation needs the 64-bit one)");
+bool available() {
+#if defined(RFGRT_STREAMLINE)
     return true;
+#else
+    return false;
+#endif
 }
-void set_wanted(bool) {}
-void scene_rendered(void*, void*) {}
 
 }  // namespace presenter
 
-#endif
+#endif  // _WIN64 (the 32-bit plugin's presenter: present/remote.cpp)

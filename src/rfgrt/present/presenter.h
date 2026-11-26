@@ -6,8 +6,9 @@
 // second swap chain on the game's window, hence the child, made on the game window's own thread (disabled: the mouse
 // and the keyboard still go to the game's window). It is the base of DLSS Frame Generation, which works on Direct3D 12
 // swap chains only. Its Direct3D 12 device is its own, on the game's adapter, whatever the renderer. Exclusive full
-// screen falls back to the game's chain. Ported from the SpaceEngineers-RTHWAccel project's presenter. 64-bit builds
-// only (Streamline is 64-bit): the 32-bit plugin has none of it.
+// screen falls back to the game's chain. Ported from the SpaceEngineers-RTHWAccel project's presenter. Streamline is
+// 64-bit only: the 32-bit plugin captures the frames and hands them to rfgrt_present.exe, which presents them
+// (present/remote.cpp, src/present_host).
 
 struct Config;
 
@@ -18,6 +19,9 @@ namespace presenter {
 // menu's FRAME GENERATION row: menu/display_rows.h), as a detour on the game's swap chain placed at its first frame's
 // end (off, it passes every present through). False when it cannot be hooked.
 bool install(const Config& cfg, bool switchable = false);
+// Frame generation can run in this build: the 64-bit plugin built with Streamline; the 32-bit one with rfgrt_present.exe
+// (its presenter, 64-bit: present/remote.cpp) next to rfgrt_host.exe.
+bool available();
 // Frame generation wanted or not (rfgrt_set_frame_generation; FrameGeneration.Enabled at start): from the next present.
 // Without it (and without FrameGeneration.Presenter) the game's swap chain presents again.
 void set_wanted(bool on);

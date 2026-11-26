@@ -102,6 +102,22 @@ def main():
         shutil.copy2(dlss_runtime, os.path.join(scripts, 'rfgrt'))
     else:
         print('note: no nvngx_dlssd.dll in the build: the package has no DLSS Ray Reconstruction')
+    # DLSS Frame Generation: rfgrt_present.exe (the plugin's presenter, 64-bit: Streamline is) with Streamline's runtime
+    # beside it, when the build has them (tools/fetch_streamline.ps1), with NVIDIA's licences
+    present = os.path.join(x64, 'rfgrt_present.exe')
+    sl_runtimes = ('sl.interposer.dll', 'sl.common.dll', 'sl.dlss_g.dll', 'sl.reflex.dll', 'sl.pcl.dll', 'nvngx_dlssg.dll')
+    sl_dir = os.path.join(ROOT, 'third_party', 'streamline')
+    with_fg = os.path.exists(present) and all(os.path.exists(os.path.join(x64, n)) for n in sl_runtimes) and         os.path.exists(os.path.join(sl_dir, 'license.txt'))
+    if with_fg:
+        newest = max(os.path.getmtime(os.path.join(base, n)) for src in ('src/present_host',)
+                     for base, _, names in os.walk(os.path.join(ROOT, src)) for n in names)
+        if os.path.getmtime(present) < newest:
+            fail(f'{present} is older than its sources: build first (tools/build.ps1)')
+        shutil.copy2(present, os.path.join(scripts, 'rfgrt'))
+        for n in sl_runtimes:
+            shutil.copy2(os.path.join(x64, n), os.path.join(scripts, 'rfgrt'))
+    else:
+        print('note: no rfgrt_present.exe with Streamline in the build: the package has no DLSS Frame Generation')
     with open(files['ini'], encoding='ascii') as f:
         ini = f.read()
     with open(os.path.join(scripts, 'rfgrt.ini'), 'w', encoding='ascii', newline='\r\n') as f:
@@ -124,6 +140,9 @@ def main():
     }
     if with_dlss:
         licenses['NVIDIA-DLSS-LICENSE.txt'] = os.path.join('third_party', 'dlss', 'LICENSE.txt')
+    if with_fg:
+        licenses['NVIDIA-Streamline-LICENSE.txt'] = os.path.join('third_party', 'streamline', 'license.txt')
+        licenses['NVIDIA-Streamline-3rd-party-licenses.md'] = os.path.join('third_party', 'streamline', '3rd-party-licenses.md')
     for dst, src in licenses.items():
         shutil.copy2(os.path.join(ROOT, src), os.path.join(out, 'rfgrt_licenses', dst))
 
