@@ -73,6 +73,17 @@ inline uint32_t ShaderLibrary_lookup = 0x001185D0;  // Steam 0x00118680; rl_shad
 inline uint32_t game_render_get_TOD_light = 0x003C2940;  // Steam 0x003C2960; game_render_get_TOD_light, 33 bytes: rl_light* __cdecl()
 inline uint32_t rl_renderer__set_light = 0x000F2AB0;  // Steam 0x000F2B50; rl_renderer::set_light, 330 bytes: void __thiscall rl_renderer::(rl_light*, bool)
 inline uint32_t rl_scene_renderer__render_lighting_passes = 0x0014DB40;  // Steam 0x0014DC00; rl_scene_renderer::render_lighting_passes, 1121 bytes: void __thiscall rl_scene_renderer::(rl_renderer*, rl_camera*, rl_light*, rl_batched_pass*, rl_renderable_instance**, uint, bool)
+inline uint32_t set_detail_page = 0x00502440;  // Steam 0x005024F0; set_detail_page, 1245 bytes: void __cdecl(enum detail_option_pages)
+inline uint32_t display_menu_enter = 0x0050F670;  // Steam 0x0050F800; display_menu_enter, 500 bytes: void __cdecl(enum game_state)
+inline uint32_t display_hint_callback = 0x00501FD0;  // Steam 0x00502080; display_hint_callback, 389 bytes: void __cdecl(enum hint_type)
+inline uint32_t changes_made = 0x004AFAA0;  // Steam 0x004AFAA0; changes_made, 119 bytes: bool __cdecl()
+inline uint32_t ui_menu_add_char_list_item = 0x004B9260;  // Steam 0x004B9260; ui_menu_add_char_list_item, 117 bytes: int __cdecl(int, rchar*, rchar**, int, fn*, int, bool)
+inline uint32_t ui_menu_add_bool_item = 0x004B91D0;  // Steam 0x004B91D0; ui_menu_add_bool_item, 142 bytes: int __cdecl(int, rchar*, bool*, fn*, bool)
+inline uint32_t ui_menu_enable_menu_item = 0x004B8E70;  // Steam 0x004B8E70; ui_menu_enable_menu_item, 87 bytes: void __cdecl(int, int, bool)
+inline uint32_t ui_menu_get_total_item_count = 0x004B9540;  // Steam 0x004B9540; ui_menu_get_total_item_count, 58 bytes: int __cdecl(int)
+inline uint32_t gameseq_push_state = 0x003D87E0;  // Steam 0x003D87C0; gameseq_push_state, 166 bytes: void __cdecl(enum game_state, bool, bool)
+inline uint32_t LocalizationHash_get = 0x004BD690;  // Steam 0x004BD690; data_hash_table<unsigned int,wchar_t *,&hash_uint,8192,unsigned int>::get, 106 bytes: bool __thiscall data_hash_table<unsigned int,wchar_t *,&hash_uint,8192,unsigned int>::(uint, wchar**)
+inline uint32_t LocalizationHash_insert = 0x004CDDF0;  // Steam 0x004CDE10; data_hash_table<unsigned int,wchar_t *,&hash_uint,8192,unsigned int>::insert_key_data, 57 bytes: bool __thiscall data_hash_table<unsigned int,wchar_t *,&hash_uint,8192,unsigned int>::(uint, wchar**)
 
 inline uint32_t Keen_input_system = 0x018E76C0;  // Steam 0x018E86C0; keen::InputSystem*
 inline uint32_t Main_menu_auto_catch_done = 0x02802571;  // Steam 0x02803571; bool
@@ -107,6 +118,9 @@ inline uint32_t ClassInfo_particlesInstance = 0x01114104;  // Steam 0x01115104; 
 inline uint32_t ClassInfo_fogVolume = 0x01113AB0;  // Steam 0x01114AB0; rl_class_factory_info
 inline uint32_t RL_reserved_landmark_depth_range = 0x01109618;  // Steam 0x0110A618; float
 inline uint32_t g_mainLightColorScale = 0x010F93C8;  // Steam 0x010FA3C8; float
+inline uint32_t Menu_handle_doptions = 0x0126320C;  // Steam 0x0126420C; int
+inline uint32_t Doc_handle_main = 0x012621AC;  // Steam 0x012631AC; int
+inline uint32_t Localization_hash = 0x0287EC90;  // Steam 0x0287FC90; data_hash_table<unsigned int,wchar_t *,&hash_uint,8192,unsigned int>
 }  // namespace rva
 
 // Struct member offsets and struct sizes in the running build (the 32-bit builds share theirs).
@@ -309,6 +323,17 @@ inline constexpr RvaEntry kRvaTable[] = {
     {&rva::game_render_get_TOD_light, {0x003C2940, 0x003C2960}},
     {&rva::rl_renderer__set_light, {0x000F2AB0, 0x000F2B50}},
     {&rva::rl_scene_renderer__render_lighting_passes, {0x0014DB40, 0x0014DC00}},
+    {&rva::set_detail_page, {0x00502440, 0x005024F0}},
+    {&rva::display_menu_enter, {0x0050F670, 0x0050F800}},
+    {&rva::display_hint_callback, {0x00501FD0, 0x00502080}},
+    {&rva::changes_made, {0x004AFAA0, 0x004AFAA0}},
+    {&rva::ui_menu_add_char_list_item, {0x004B9260, 0x004B9260}},
+    {&rva::ui_menu_add_bool_item, {0x004B91D0, 0x004B91D0}},
+    {&rva::ui_menu_enable_menu_item, {0x004B8E70, 0x004B8E70}},
+    {&rva::ui_menu_get_total_item_count, {0x004B9540, 0x004B9540}},
+    {&rva::gameseq_push_state, {0x003D87E0, 0x003D87C0}},
+    {&rva::LocalizationHash_get, {0x004BD690, 0x004BD690}},
+    {&rva::LocalizationHash_insert, {0x004CDDF0, 0x004CDE10}},
     {&rva::Keen_input_system, {0x018E76C0, 0x018E86C0}},
     {&rva::Main_menu_auto_catch_done, {0x02802571, 0x02803571}},
     {&rva::Num_saved_games, {0x0280711C, 0x0280811C}},
@@ -342,6 +367,9 @@ inline constexpr RvaEntry kRvaTable[] = {
     {&rva::ClassInfo_fogVolume, {0x01113AB0, 0x01114AB0}},
     {&rva::RL_reserved_landmark_depth_range, {0x01109618, 0x0110A618}},
     {&rva::g_mainLightColorScale, {0x010F93C8, 0x010FA3C8}},
+    {&rva::Menu_handle_doptions, {0x0126320C, 0x0126420C}},
+    {&rva::Doc_handle_main, {0x012621AC, 0x012631AC}},
+    {&rva::Localization_hash, {0x0287EC90, 0x0287FC90}},
     {&off::WcOptions_mode, {0x0, 0x0}},
     {&off::WcOptions_map_index, {0x8, 0x8}},
     {&off::WcShellInfo_state, {0x0, 0x0}},
@@ -536,6 +564,17 @@ inline uint32_t ShaderLibrary_lookup = 88;
 inline uint32_t game_render_get_TOD_light = 33;
 inline uint32_t rl_renderer__set_light = 330;
 inline uint32_t rl_scene_renderer__render_lighting_passes = 1121;
+inline uint32_t set_detail_page = 1245;
+inline uint32_t display_menu_enter = 500;
+inline uint32_t display_hint_callback = 389;
+inline uint32_t changes_made = 119;
+inline uint32_t ui_menu_add_char_list_item = 117;
+inline uint32_t ui_menu_add_bool_item = 142;
+inline uint32_t ui_menu_enable_menu_item = 87;
+inline uint32_t ui_menu_get_total_item_count = 58;
+inline uint32_t gameseq_push_state = 166;
+inline uint32_t LocalizationHash_get = 106;
+inline uint32_t LocalizationHash_insert = 57;
 }  // namespace size
 
 struct game_state_name { int value; const char* name; };
@@ -651,6 +690,23 @@ inline constexpr rl_renderable_instance__pass_flags_name rl_renderable_instance_
     {512, "PASS_FLAGS_ADDITIVE"},
     {1024, "PASS_FLAGS_DISTORTION_ONLY"},
     {-1, "PASS_FLAGS_FORCE_SIZEOF_ENUM"},
+};
+
+struct hint_type_name { int value; const char* name; };
+inline constexpr hint_type_name hint_type_names[] = {
+    {0, "HT_SELECTION"},
+    {1, "HT_ABORT"},
+    {2, "HT_MISC"},
+    {3, "HT_MISC_2"},
+    {4, "HT_LAST"},
+};
+
+struct detail_option_pages_name { int value; const char* name; };
+inline constexpr detail_option_pages_name detail_option_pages_names[] = {
+    {-1, "DETAIL_OPTIONS_PAGE_INVALID"},
+    {0, "DETAIL_OPTIONS_PAGE_GENERAL"},
+    {1, "DETAIL_OPTIONS_PAGE_ADVANCED"},
+    {2, "NUM_DETAIL_OPTIONS_PAGES"},
 };
 
 }  // namespace rfg

@@ -172,13 +172,14 @@ bool enabled() { return g_on; }
 
 bool install(const Config& cfg) {
     g_cfg = cfg;
-    g_on = cfg.gi_enabled;
+    // path tracing's alone: with Host.Enabled=0 (STANDARD, the display menu's RENDERER row) the game as it ships
+    g_on = cfg.gi_enabled && cfg.host_enabled;
     g_refl = cfg.gi_enabled && cfg.refl_enabled && cfg.host_enabled && cfg.host_mode == 3;
     g_floor = cfg.gi_enabled && cfg.host_enabled && cfg.host_mode == 3 && cfg.shadow_specular >= 0.0 && cfg.shadow_specular < 0.05;
     g_glass = cfg.gi_enabled && cfg.gi_glass && cfg.host_enabled && cfg.host_mode == 3;
     g_fog = cfg.gi_enabled && cfg.fog_enabled && cfg.gi_debug == 0 && cfg.host_enabled && cfg.host_mode == 3;
     g_tint = cfg.gi_enabled && cfg.gi_window_tint && cfg.gi_debug == 0 && cfg.host_enabled && cfg.host_mode == 3;
-    g_eye = cfg.tonemap_eye_adaptation_dark >= 0.0;
+    g_eye = cfg.tonemap_eye_adaptation_dark >= 0.0 && cfg.host_enabled;
     if (!g_on && !lights::enabled()) return true;  // the hook below serves both (lights::install comes first)
     if (g_on) session::add_flush_handler(&report);
     const bool ok = hooks::create_this(rfg::rva::rl_scene_renderer__set_shadow_states, &d_set_shadow_states, &o_set_shadow_states,

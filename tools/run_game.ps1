@@ -43,7 +43,16 @@ $sourcesOf = @{
     $asi     = @('src\rfgrt', 'src\shared')
     $hostExe = @('host', 'src\rtcore', 'src\shared')
 }
-foreach ($f in $asi, $hostExe) {
+# rfgrt_present.exe (the 32-bit plugin's presenter), when the build has it
+$presentExe = Join-Path (Split-Path $hostExe) 'rfgrt_present.exe'
+$checked = @($asi, $hostExe)
+if (Test-Path $presentExe) {
+    $sourcesOf[$presentExe] = @('src\present_host', 'src\rfgrt\present\framegen.cpp', 'src\rfgrt\present\framegen.h',
+                                'src\rfgrt\present\present_ipc.h', 'src\rfgrt\present\fg_motion.hlsl', 'src\rfgrt\present\fg_ui.hlsl',
+                                'src\rfgrt\core\log.cpp', 'src\rfgrt\core\log.h')
+    $checked += $presentExe
+}
+foreach ($f in $checked) {
     $newest = Get-ChildItem ($sourcesOf[$f] | ForEach-Object { Join-Path $root $_ }) -Recurse -File |
         Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if ((Get-Item $f).LastWriteTime -lt $newest.LastWriteTime) {
@@ -81,6 +90,17 @@ try {
     # DLSS Ray Reconstruction's runtime, beside the core, when the build has it (tools\fetch_dlss.ps1)
     $dlss = Join-Path (Split-Path $hostExe) 'nvngx_dlssd.dll'
     if (Test-Path $dlss) { Install-File $dlss (Join-Path $scripts 'rfgrt\nvngx_dlssd.dll') }
+    # DLSS Frame Generation: rfgrt_present.exe (the plugin's presenter, 64-bit) with Streamline's runtime DLLs beside it,
+    # when the build has them (tools\fetch_streamline.ps1)
+    $present = Join-Path (Split-Path $hostExe) 'rfgrt_present.exe'
+    if (Test-Path $present) {
+        Install-File $present (Join-Path $scripts 'rfgrt\rfgrt_present.exe')
+        Install-File ([IO.Path]::ChangeExtension($present, '.pdb')) (Join-Path $scripts 'rfgrt\rfgrt_present.pdb')
+        foreach ($sl in 'sl.interposer.dll', 'sl.common.dll', 'sl.dlss_g.dll', 'sl.reflex.dll', 'sl.pcl.dll', 'nvngx_dlssg.dll') {
+            $f = Join-Path (Split-Path $hostExe) $sl
+            if (Test-Path $f) { Install-File $f (Join-Path $scripts "rfgrt\$sl") }
+        }
+    }
     $physx = $false
     if ($WithPhysX) {
         $scriptsIn = if ($PhysXFrom) { $PhysXFrom } else { Join-Path $GameDir 'scripts' }

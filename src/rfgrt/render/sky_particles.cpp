@@ -98,6 +98,12 @@ bool install(const Config& cfg) {
         at = end + 1;
     }
     if (!g_on_top && g_prefixes.empty()) return true;
+    if (!cfg.host_enabled) {  // path tracing's alone: with Host.Enabled=0 the game's own particles
+        LOG("particles: no path tracing (Host.Enabled=0): the wind's particles stay the game's");
+        g_on_top = false;
+        g_prefixes.clear();
+        return true;
+    }
     if (!rfg::rva::rl_particle_renderer__render || !rfg::rva::rl_renderer__set_viewport_z_range ||
         !rfg::rva::rl_renderer__get_viewport_z_range || !rfg::off::ParticlesInstance_renderable) {
         LOG("particles: this build lacks the particle renderer's names: the wind's particles stay the game's");

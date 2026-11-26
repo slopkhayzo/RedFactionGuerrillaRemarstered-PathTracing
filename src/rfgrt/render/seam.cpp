@@ -19,6 +19,7 @@
 #include "mirror/geometry.h"
 #include "mirror/instances.h"
 #include "mirror/textures.h"
+#include "present/presenter.h"
 #include "render/d3d_state.h"
 #include "render/gi.h"
 #include "render/lights.h"
@@ -647,6 +648,7 @@ DWORD WINAPI snapshot_worker_main(LPVOID) {
 // passes and the final composite (1 - exp(-k (8 x scene + bloom x Bloom_amount))). The game's values are logged when
 // they change (at most every 2 s).
 void* tonemap_state(void* hdr) {
+    if (!g_cfg.host_enabled) return hdr;  // path tracing's alone: with Host.Enabled=0 the game's own tone mapping
     static thread_local uint8_t copy[256];
     const uint32_t size = rfg::off::HdrState_size;
     if (!hdr || size == 0 || size > sizeof(copy)) return hdr;
@@ -676,7 +678,12 @@ void* tonemap_state(void* hdr) {
 void __fastcall d_scene_render(RFG_THIS(void*, self), void* renderer, void* sim_renderer, void* scene, void* camera,
                                void* hdr, void* color_correct) {
     const active::Work work;  // (the whole render: the seam, the snapshot worker and the scene thread's passes)
-    if (!work.on) return o_scene_render(self, renderer, sim_renderer, scene, camera, hdr, color_correct);
+    if (!work.on) {
+        o_scene_render(self, renderer, sim_renderer, scene, camera, hdr, color_correct);
+        // the plugins' scene's end for frame generation (with path tracing off too)
+        if (!g_main_scene || g_main_scene == self) presenter::scene_rendered(self, camera);
+        return;
+    }
     hdr = tonemap_state(hdr);
     t_scene_renderer = static_cast<uint8_t*>(self);
     t_frame = 0;
@@ -721,6 +728,7 @@ void __fastcall d_scene_render(RFG_THIS(void*, self), void* renderer, void* sim_
     }
     t_scene_renderer = nullptr;
     t_frame = 0;
+    if (main_scene) presenter::scene_rendered(self, camera);  // the plugins' scene's end for frame generation
 }
 
 // rl_scene_renderer::clb_render clears ClbTexture, then for each cascade renders its shadow map
