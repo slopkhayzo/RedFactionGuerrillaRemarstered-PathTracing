@@ -7,7 +7,9 @@
 // a height fog thinning upward, starting c into it, the same colour wherever it is. Here the same T (per pixel) and
 // fogColor, but the light the fog scatters follows what reaches it: its share from the sun (fog_color.w) where the sun
 // gets there, the rest where the sky does (fog_light). Fog that both reach is the game's: the fog's colour and density
-// are the game's, its light shafts and its shadows the path tracer's.
+// are the game's, its light shafts and its shadows the path tracer's. Fog.Near (fog.w) keeps that share of the fog the
+// game leaves out within its start: T = 2^-(max(tau - c, 0) + fog.w min(tau, c)) (fog_transmittance), the same beyond
+// the start with fog.w 0, the fog from the camera on with 1.
 #define TRACE_NO_TRACED
 #include "trace_common.hlsli"
 

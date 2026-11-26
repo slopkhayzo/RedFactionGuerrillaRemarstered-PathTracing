@@ -27,7 +27,7 @@
 namespace rfgrt_ipc {
 
 constexpr uint32_t kMagic = 0x54524652;  // "RFRT"
-constexpr uint32_t kVersion = 26;
+constexpr uint32_t kVersion = 27;
 constexpr uint32_t kMaxLightMasks = 16;  // shadow masks of dynamic lights a frame
 
 enum HostState : int32_t {
@@ -139,6 +139,10 @@ struct Block {
     float fog_sun_share;
     float fog_anisotropy;
     float fog_density;  // Test.FogDensity: the volumetric fog's density over the game's fog's (1)
+    float fog_near;       // Fog.Near: the share kept of the fog the game leaves out within its start (0 to 1)
+    int32_t fog_history;  // Fog.History: the most frames each froxel's light is averaged over
+    int32_t fog_rays;     // Fog.Rays: rays from each froxel a frame (1 to 4)
+    int32_t fog_filter;   // Fog.Filter: 1 the froxels' light smoothed across the screen before it is summed
     int32_t host_fog;  // the core: 1 when it writes the fog texture of the frame resources it queues with (host_generation)
     // The clear glass's reflections (Reflections.Glass): on, its reflectance at normal incidence (Reflections.GlassReflectance)
     int32_t refl_glass;

@@ -109,6 +109,11 @@ struct Config {
                                    // is the game's colour
     double fog_anisotropy = 0.25;  // how much more of the sun's share the fog scatters toward the sun than away from it
                                    // (Henyey-Greenstein g: 0 even; the shafts stand out more looking toward the sun)
+    double fog_near = 0.5;         // the share kept of the fog the game leaves out near the camera (within its start:
+                                   // 15 to 30 m of its daytime fog): 0 the game's (none), 1 the fog from the camera on
+    int fog_history = 20;          // the most frames each froxel's light is averaged over (more: smoother, slower to follow)
+    int fog_rays = 1;              // rays from each froxel a frame, 1 to 4 (4 anyway while it has no history yet)
+    bool fog_filter = true;        // each froxel's light averaged with its neighbours' across the screen (a 3x3 tent)
 
     // [Tonemap] the game's tone mapping while path tracing (the game's own renderer keeps its look): the bloom's strength
     // (1 the game's, 0 none: the glow it spreads around bright parts made a lit hole or window look like a lamp)

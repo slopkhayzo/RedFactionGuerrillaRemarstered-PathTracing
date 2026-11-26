@@ -52,9 +52,10 @@ constexpr uint32_t kCounts = 512;   // per slot: 5 pixel classes (of 8), 16 dept
 constexpr uint32_t kStamps = 12;    // timestamps per slot: TLAS start and end, pass start and end, GI, lights, reflections,
                                     // the fog's start and end; in the GI's: the rays' start, the glass's, the sun tint's
 // The volumetric fog's grid of froxels (shaders/fog_common.hlsli): columns across the screen (rows by its aspect), slices
-// in depth from kFogNear metres to the camera's far plane (50 to 2000 m), the most frames its light is averaged over.
+// in depth from kFogNear metres to the camera's far plane (50 to 2000 m). The most frames its light is averaged over,
+// the rays a frame, the smoothing: Fog.History, Fog.Rays, Fog.Filter.
 constexpr uint32_t kFogColumns = 160, kFogSlices = 64;
-constexpr float kFogNear = 0.5f, kFogFrames = 20.0f;
+constexpr float kFogNear = 0.5f;
 constexpr uint32_t kReadback = kStamps * 8 + kCounts;  // per slot: the timestamps, then the counts
 
 const RunParams* g_p = nullptr;
@@ -325,6 +326,7 @@ struct GiConstants {
     // the top-left part of their textures; zw the sample's offset from each render pixel's centre (render pixels, y down):
     // each traces from the frame's pixel under that point
     float upscale[4];
+    float fog4[4];  // the volumetric fog: x the rays from each froxel a frame (Fog.Rays), y 1 with Fog.Filter
 };
 static_assert(sizeof(GiConstants) <= 512, "a 512-byte slot a ring slot");
 
@@ -683,9 +685,12 @@ int run(const RunParams& p) {
                     logf("fog: the game's own (no pipeline for the volumetric fog)");
                 } else {
                     logf("fog: volumetric (Fog.Enabled): the game's fog lit where the sun and the sky reach it, %u froxels across "
-                         "the screen, %u slices from %.1f m to the far plane, averaged over up to %.0f frames; the sun's share %.2f, "
-                         "anisotropy %.2f",
-                         kFogColumns, kFogSlices, kFogNear, kFogFrames, b->fog_sun_share, b->fog_anisotropy);
+                         "the screen, %u slices from %.1f m to the far plane, %d ray(s) from each a frame along low-discrepancy "
+                         "sequences, averaged over up to %d frames%s; the sun's share %.2f, anisotropy %.2f; %.0f%% of the fog "
+                         "within the game's start kept (Fog.Near)",
+                         kFogColumns, kFogSlices, kFogNear, b->fog_rays, b->fog_history,
+                         b->fog_filter ? ", smoothed across the screen (Fog.Filter)" : "", b->fog_sun_share, b->fog_anisotropy,
+                         b->fog_near * 100.0);
                 if (b->fog_density != 1.0f) logf("fog: its density %g times the game's (Test.FogDensity)", b->fog_density);
                 }
             }
@@ -1804,7 +1809,7 @@ int run(const RunParams& p) {
                         g.fog[0] = h->fog_distance[1] * (b->fog_density >= 0.0f ? b->fog_density : 1.0f);
                         g.fog[1] = h->fog_distance[0];
                         g.fog[2] = h->fog_distance[3];
-                        g.fog[3] = 1.0f;
+                        g.fog[3] = fogSet ? b->fog_near : 0.0f;  // Fog.Near: the volumetric fog's (the game's keeps its start)
                         g.glass[0] = b->refl_glass_f0;
                         g.probe[0] = b->probe_x > 0.0f && b->probe_x < 1.0f ? b->probe_x : 0.5f;
                         g.probe[1] = b->probe_y > 0.0f && b->probe_y < 1.0f ? b->probe_y : 0.5f;
@@ -1820,7 +1825,9 @@ int run(const RunParams& p) {
                             g.fog3[0] = float(set.fog_x);
                             g.fog3[1] = float(set.fog_y);
                             g.fog3[2] = fogHistory && historyValid ? 1.0f : 0.0f;
-                            g.fog3[3] = kFogFrames;
+                            g.fog3[3] = float(b->fog_history > 0 ? b->fog_history : 20);
+                            g.fog4[0] = float(b->fog_rays > 0 ? b->fog_rays : 1);
+                            g.fog4[1] = b->fog_filter ? 1.0f : 0.0f;
                         }
                         // DLSS (dlss.h): Ray Reconstruction denoises the GI unless the mode is off; below DLAA the rays
                         // and its guides run at the mode's render size (the top-left part of their textures), each of

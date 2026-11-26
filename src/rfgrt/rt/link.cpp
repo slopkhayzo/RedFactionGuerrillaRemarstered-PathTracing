@@ -178,6 +178,10 @@ bool Link::create_region() {
     block_->fog_sun_share = opt_.fog_sun_share;
     block_->fog_anisotropy = opt_.fog_anisotropy;
     block_->fog_density = opt_.fog_density;
+    block_->fog_near = opt_.fog_near;
+    block_->fog_history = opt_.fog_history;
+    block_->fog_rays = opt_.fog_rays;
+    block_->fog_filter = opt_.fog_filter ? 1 : 0;
     block_->gi_sky_drawn = opt_.gi_sky_drawn;
     block_->refl_enabled = opt_.refl_enabled ? 1 : 0;
     block_->refl_length = opt_.refl_length;

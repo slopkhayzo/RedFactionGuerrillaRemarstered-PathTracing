@@ -60,6 +60,10 @@ struct Options {
     float fog_sun_share = 0.65f;
     float fog_anisotropy = 0.25f;
     float fog_density = 1.0f;  // Test.FogDensity
+    float fog_near = 0.5f;     // Fog.Near
+    int fog_history = 20;      // Fog.History
+    int fog_rays = 1;          // Fog.Rays
+    bool fog_filter = true;    // Fog.Filter
     float gi_sky_drawn = 1.0f;  // the drawn sky for rays that get out (GI.SkyDrawn)
     int light_masks = 0;      // shadow masks of dynamic lights (0: none)
     bool refl_enabled = false;  // reflections (a texture the core writes, the patched lit shaders read at t16)
