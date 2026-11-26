@@ -27,7 +27,7 @@
 namespace rfgrt_ipc {
 
 constexpr uint32_t kMagic = 0x54524652;  // "RFRT"
-constexpr uint32_t kVersion = 27;
+constexpr uint32_t kVersion = 28;
 constexpr uint32_t kMaxLightMasks = 16;  // shadow masks of dynamic lights a frame
 
 enum HostState : int32_t {
@@ -86,6 +86,10 @@ struct Block {
     uint64_t sun_tint_handle;  // Texture2D R8G8B8A8_UNORM: what of the sun's light the clear glass between each pixel's surface
                                // and the sun lets through (sun_tint.hlsl: rgb, a 1), the core writes, the patched lit shaders
                                // read at t20 (0: none)
+    uint64_t glass_fog_handle;  // Texture2D R16G16B16A16_FLOAT: the volumetric fog between the camera and the nearest glass in
+                                // front of each pixel (fog_apply.hlsl: rgb what it scatters toward the camera, a what of the
+                                // glass's light gets through; 0 where no glass), the core writes with the fog, the patched
+                                // glass shader reads at t21 (0: none)
     // Texture2D R8G8_UNORM each: the shadow masks of the dynamic lights a frame scene lists (frame_scene.h Light::mask),
     // G the light's visibility, R 1; the plugin binds each at t15 for its light's pass (0: no such mask).
     uint64_t light_mask_handles[kMaxLightMasks];

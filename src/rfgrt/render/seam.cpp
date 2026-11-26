@@ -574,7 +574,8 @@ void on_seam(uint8_t* graphics, uint8_t* scene) {
                              link.block()->host_generation == link.generation();
         gi::on_seam(dev, ctx, w, h, core_ok ? link.irradiance_srv() : nullptr, core_ok ? link.reflection_srv() : nullptr,
                     core_ok ? link.glass_srv() : nullptr, core_ok ? link.glass_refl_srv() : nullptr,
-                    core_ok && link.block()->host_fog ? link.fog_srv() : nullptr, core_ok ? link.sun_tint_srv() : nullptr);
+                    core_ok && link.block()->host_fog ? link.fog_srv() : nullptr, core_ok ? link.sun_tint_srv() : nullptr,
+                    core_ok && link.block()->host_fog ? link.glass_fog_srv() : nullptr);
         lights::on_seam(answered, core_ok);  // the dynamic lights' masks, bound in this frame's lighting passes
     }
     saved.restore(ctx);

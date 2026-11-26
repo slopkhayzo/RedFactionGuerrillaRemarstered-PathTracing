@@ -33,6 +33,9 @@
 // The fog's patch (patch/fog.h), last, on the shader as the plugin has it by then (as the shadow floor's above, or the
 // original): XA with t18's alpha 0 it is that shader; XB with alpha 0.6 (the core's fog there) it is that shader with
 // the fog's input component 0 (no fog of the game's).
+// The fog at the glass (patch/glass.h `fog`, then the fog's patch on t21, on the original as the plugin does): GF0 with
+// t21's alpha 0 it is the glass-patched shader; GF1 with t21 = (S, T) it is that shader with the fog's input component 0,
+// its colour times T plus S.
 //
 //   shaderpatch [research\out\shaders]
 #include <windows.h>
@@ -451,7 +454,7 @@ int wmain(int argc, wchar_t** argv) {
     size_t fog_created = 0, fog_checks = 0, fog_passed = 0, fog_lit = 0;
     std::map<std::string, size_t> glass_results;
     std::vector<std::string> glass_shaders;
-    size_t glass_created = 0, glass_checks = 0, glass_passed = 0;
+    size_t glass_created = 0, glass_checks = 0, glass_passed = 0, glass_fogged = 0;
     for (const auto& entry : fs::recursive_directory_iterator(fxo)) {
         if (entry.path().extension() != ".dxbc") continue;
         const std::vector<uint8_t> blob = read_file(entry.path());
@@ -646,6 +649,69 @@ int wmain(int argc, wchar_t** argv) {
                         } else {
                             problems.push_back(shader + ": glass " + (vis == 0.0f ? "GC (in shadow)" : "GD (half the sun)") +
                                                ": patched " + str(q) + ", want " + str(want));
+                        }
+                    }
+                }
+                // GF: the fog at the glass (glass::patch's `fog`, then fog::patch on t21, as the plugin does with the
+                // volumetric fog): with t21's alpha 0 it is the glass-patched shader (GF0); with t21 = (S, T), that shader
+                // with the fog's input 0 (none of the game's), its colour times T plus S, its alpha as it was (GF1)
+                {
+                    std::vector<uint8_t> gf0, gff;
+                    glass::Report gr2;
+                    fog::Report fr2;
+                    Interface ff;
+                    if (glass::patch(blob.data(), blob.size(), &gf0, &gr2, true) != glass::Result::Patched ||
+                        fog::patch(gf0.data(), gf0.size(), &gff, &fr2, glass::kGlassFogSlot) != fog::Result::Patched ||
+                        !read_interface(gff, &ff)) {
+                        problems.push_back(shader + ": glass GF: the fog at the glass not patched: " + gr2.reason + fr2.reason);
+                    } else {
+                        ++glass_fogged;
+                        const std::string ftext = disassemble(gff);
+                        if (!ftext.empty())
+                            std::ofstream(entry.path().parent_path() / (entry.path().stem().string() + ".glassfog.asm"),
+                                          std::ios::binary) << ftext;
+                        else
+                            problems.push_back(shader + ": the glass's fog-patched shader does not disassemble");
+                        ID3D11PixelShader* fps = nullptr;
+                        if (SUCCEEDED(dev->CreatePixelShader(gff.data(), gff.size(), nullptr, &fps)))
+                            fps->Release();
+                        else
+                            problems.push_back(shader + ": the glass's fog-patched shader is refused by CreatePixelShader");
+                        for (int trial = 0; trial < 3; ++trial) {
+                            Setting s = made_up(ff, rng);
+                            const float F = gu(rng);
+                            s.textures[glass::kGlassSlot] = Float4{{gu(rng), gu(rng), gu(rng), trial == 0 ? 0.0f : 1.0f + gu(rng)}};
+                            s.textures[glass::kGlassReflSlot] = Float4{{gu(rng) * F, gu(rng) * F, gu(rng) * F, F}};
+                            s.textures[glass::kGlassFogSlot] = Float4{{0.0f, 0.0f, 0.0f, 0.0f}};
+                            Float4 o, q;
+                            ++glass_checks;
+                            if (!runner.run(gl, fg, s.inputs, s.textures, s.constants, &o) ||
+                                !runner.run(gff, ff, s.inputs, s.textures, s.constants, &q)) {
+                                problems.push_back(shader + ": glass GF0: a run failed");
+                            } else if ((cleared(o) && cleared(q)) || same(q, o)) {
+                                ++glass_passed;
+                            } else {
+                                problems.push_back(shader + ": glass GF0 (alpha 0: the game's fog): glass-patched " + str(o) +
+                                                   ", with the fog " + str(q));
+                            }
+                            Setting sf = s, none = s;
+                            const float T = gu(rng);
+                            const Float4 S{{gu(rng), gu(rng), gu(rng), T}};
+                            sf.textures[glass::kGlassFogSlot] = S;
+                            if (fr2.input < none.inputs.size()) none.inputs[fr2.input].v[fr2.component] = 0.0f;
+                            ++glass_checks;
+                            if (!runner.run(gl, fg, none.inputs, none.textures, none.constants, &o) ||
+                                !runner.run(gff, ff, sf.inputs, sf.textures, sf.constants, &q)) {
+                                problems.push_back(shader + ": glass GF1: a run failed");
+                                continue;
+                            }
+                            Float4 want = o;
+                            for (int k = 0; k < 3; ++k) want.v[k] = o.v[k] * T + S.v[k];
+                            if ((cleared(o) && cleared(q)) || same(q, want))
+                                ++glass_passed;
+                            else
+                                problems.push_back(shader + ": glass GF1 (the core's fog at the glass): patched " + str(q) +
+                                                   ", want " + str(want));
                         }
                     }
                 }
@@ -1148,7 +1214,8 @@ int wmain(int argc, wchar_t** argv) {
         << fog_checks << " checks agree\n";
     rep << "glass patch:";
     for (const auto& [k, v] : glass_results) rep << " " << k << " " << v << ";";
-    rep << " patched ones created " << glass_created << "; " << glass_passed << " of " << glass_checks << " checks agree; patched:";
+    rep << " patched ones created " << glass_created << "; the fog at the glass patched into " << glass_fogged << "; "
+        << glass_passed << " of " << glass_checks << " checks agree; patched:";
     for (const std::string& g : glass_shaders) rep << " " << g;
     rep << "\n\npatched by family:\n";
     for (const auto& [k, v] : patched_by_family) rep << "  " << k << " " << v << "\n";

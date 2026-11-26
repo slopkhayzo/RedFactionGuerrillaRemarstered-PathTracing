@@ -64,6 +64,7 @@ struct Options {
     int fog_history = 20;      // Fog.History
     int fog_rays = 1;          // Fog.Rays
     bool fog_filter = true;    // Fog.Filter
+    bool fog_glass = true;     // Fog.Glass: the fog in front of the glass, a texture the core writes, the glass shader reads at t21
     float gi_sky_drawn = 1.0f;  // the drawn sky for rays that get out (GI.SkyDrawn)
     int light_masks = 0;      // shadow masks of dynamic lights (0: none)
     bool refl_enabled = false;  // reflections (a texture the core writes, the patched lit shaders read at t16)
@@ -126,6 +127,9 @@ public:
     // What the clear glass in front of each pixel reflects (Reflections.Glass; glass_light.hlsl), for the patched glass
     // shader's t19 (null: none)
     ID3D11ShaderResourceView* glass_refl_srv() const { return glass_refl_srv_; }
+    // The volumetric fog between the camera and the clear glass in front of each pixel (fog_apply.hlsl), for the patched
+    // glass shader's t21 (null: none, the game's fog on the glass)
+    ID3D11ShaderResourceView* glass_fog_srv() const { return glass_fog_srv_; }
     // What of the sun's light the clear glass lets through to each pixel's surface (GI.WindowTint; shaders/sun_tint.hlsl),
     // for the patched lit shaders' t20 (null: none)
     ID3D11ShaderResourceView* sun_tint_srv() const { return sun_tint_srv_; }
@@ -225,6 +229,9 @@ private:
     ID3D11Texture2D* glass_refl_ = nullptr;
     ID3D11ShaderResourceView* glass_refl_srv_ = nullptr;
     void* glass_refl_nt_ = nullptr;
+    ID3D11Texture2D* glass_fog_ = nullptr;
+    ID3D11ShaderResourceView* glass_fog_srv_ = nullptr;
+    void* glass_fog_nt_ = nullptr;
     ID3D11Texture2D* sun_tint_ = nullptr;
     ID3D11ShaderResourceView* sun_tint_srv_ = nullptr;
     void* sun_tint_nt_ = nullptr;

@@ -26,11 +26,13 @@ void on_render(uint8_t* renderer, uint8_t* scene);
 // glass shader (patch/glass.h).
 // `core_fog`: the core's volumetric fog (Fog.Enabled), bound at t18 for the frame's lit passes and blended over the
 // scene at their end; null: the game's own fog.
+// `core_glass_fog`: that fog in front of the glass (t21, for the patched glass shader); null: the game's fog on the glass.
 void on_seam(ID3D11Device* dev, ID3D11DeviceContext* ctx, uint32_t width, uint32_t height, ID3D11ShaderResourceView* core_irradiance,
              ID3D11ShaderResourceView* core_reflection, ID3D11ShaderResourceView* core_glass,
-             ID3D11ShaderResourceView* core_glass_refl, ID3D11ShaderResourceView* core_fog, ID3D11ShaderResourceView* core_sun_tint);
+             ID3D11ShaderResourceView* core_glass_refl, ID3D11ShaderResourceView* core_fog, ID3D11ShaderResourceView* core_sun_tint,
+             ID3D11ShaderResourceView* core_glass_fog);
 // rl_scene_renderer::render_lighting_passes' end (scene thread): the lit opaque scene, copied for the core's GI rays;
-// then the volumetric fog over it (t18 unbound: what is drawn after keeps the game's fog).
+// then the volumetric fog over it (t18 unbound: what is drawn after keeps the game's fog, but for the plain glass: t21).
 void on_lit(uint8_t* scene_renderer, uint8_t* renderer);
 // From the shader hooks: the patched bytecode of a lit base pass (false: create it as it is).
 bool patch_pixel_shader(const void* code, size_t size, std::vector<uint8_t>* out);

@@ -25,6 +25,15 @@
 // so that blended over the scene (SRC_ALPHA, INV_SRC_ALPHA: the glass's colour is not premultiplied) the glass shows its
 // colour c a and the reflection F L over (1 - a)(1 - F) of what is behind it: the reflection at its surface, not under
 // its tint.
+// And the fog in front of the glass (Fog.Enabled; `fog`): the core's volumetric fog between the camera and the glass,
+// at t21 (rgb the light it scatters toward the camera, fogColor R (1 - T); alpha T, its transmittance; 0 where there is
+// no glass), takes the place of the game's: the fog's patch (patch/fog.h) on t21 leaves the game's fog out where t21 is
+// there, and after the reflection, before each ret,
+//   ftoi rR.xy, v<pos>.xyxx; mov rR.zw, l(0); ld rR.xyzw, rR.xyzw, t21.xyzw      (S, T)
+//   mad  rS.xyz, rO.xyz, rR.www, rR.xyz;  movc rO.xyz, rR.www, rS.xyz, rO.xyz     c' T + S where it is there
+// so that the glass and what it reflects are fogged as a whole at the glass (the core leaves the reflection unfaded
+// then): blended, c' T a' + S a' + (1 - a') times what is behind, whose own fog is the opaque scene's. The game's fog
+// on the glass had no part near the camera (Fog.Near), took no shade and was tinted by the glass's colour.
 // Where alpha is 0 (no glass found, the core not answering, F11's vanilla view) the shader computes what the original
 // does. Only a shader of that make is patched: the sun's colour (cb1[0]) met once by a `mul`, whose result is added to
 // the light times the diffuse texture's colour, and no shadow (ClbTexture's G) read: rfg-glass (unlit) and
@@ -37,6 +46,7 @@ namespace glass {
 
 constexpr uint32_t kGlassSlot = 17;      // t17: free in every shader of the game
 constexpr uint32_t kGlassReflSlot = 19;  // t19 (what the clear glass reflects): free too (t18: the fog's)
+constexpr uint32_t kGlassFogSlot = 21;   // t21 (the fog in front of the glass): free too (t20: the sun tint's)
 
 enum class Result {
     NotPixelShader,
@@ -50,6 +60,8 @@ struct Report {
 };
 const char* name(Result r);
 
-Result patch(const void* bytes, size_t size, std::vector<uint8_t>* out, Report* report);
+// `fog`: the core's fog at the glass (t21) over the output too; the caller leaves the game's fog out with fog::patch on
+// t21 (without that, the glass would be fogged twice)
+Result patch(const void* bytes, size_t size, std::vector<uint8_t>* out, Report* report, bool fog = false);
 
 }  // namespace glass

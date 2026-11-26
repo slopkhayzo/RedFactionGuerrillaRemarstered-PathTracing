@@ -82,7 +82,7 @@ const char* name(Result r) {
     }
 }
 
-Result patch(const void* bytes, size_t size, std::vector<uint8_t>* out, Report* report) {
+Result patch(const void* bytes, size_t size, std::vector<uint8_t>* out, Report* report, bool fog) {
     Report local;
     Report& r = report ? *report : local;
     auto fail = [&](const std::string& why) {
@@ -126,6 +126,7 @@ Result patch(const void* bytes, size_t size, std::vector<uint8_t>* out, Report* 
             if (slot == 15) has_t15 = true;  // ClbTexture: only its occlusion may be read (below)
             if (slot == kGlassSlot) return fail("t17 is in use");
             if (slot == kGlassReflSlot) return fail("t19 is in use");
+            if (fog && slot == kGlassFogSlot) return fail("t21 is in use");
             if (slot == diffuse) diffuse_dcl = int(i);
         } else if (in.opcode == dxbc::kDclTemps && in.length == 2) {
             temps = p.tokens[in.offset + 1];
@@ -270,13 +271,17 @@ Result patch(const void* bytes, size_t size, std::vector<uint8_t>* out, Report* 
     if (!rets) return fail("no ret");
 
     const uint32_t tn = temps, tm = temps + 1, to = temps + 2, tr = temps + 3, ts = temps + 4;
-    std::vector<uint32_t> dcl_t17, dcl_t19;
+    std::vector<uint32_t> dcl_t17, dcl_t19, dcl_t21;
     {
         const Instruction& dd = p.code[size_t(diffuse_dcl)];
         dcl_t17.assign(p.tokens.begin() + dd.offset, p.tokens.begin() + dd.offset + dd.length);
         dcl_t17[dd.operands[0].first + 1] = kGlassSlot;
         dcl_t19 = dcl_t17;
         dcl_t19[dd.operands[0].first + 1] = kGlassReflSlot;
+        if (fog) {
+            dcl_t21 = dcl_t17;
+            dcl_t21[dd.operands[0].first + 1] = kGlassFogSlot;
+        }
     }
     // dcl_input_ps_siv linear noperspective v<position>.xy, position
     const std::vector<uint32_t> dcl_position = {op_token(dxbc::kDclInputPsSiv, 4) | (4u << 11), 0x00101032u, position, 1u};
@@ -312,9 +317,19 @@ Result patch(const void* bytes, size_t size, std::vector<uint8_t>* out, Report* 
         temp_src(swz(0, 1, 2, 0)), to,
         op_token(dxbc::kMovc, 9), temp_dst(0x8), to, temp_src(swz(3, 3, 3, 3)), tr, temp_src(swz(0, 0, 0, 0)), ts,
         temp_src(swz(3, 3, 3, 3)), to,
-        op_token(dxbc::kMov, 5), output_dst(out_mask), 0, temp_src(swz(0, 1, 2, 3)), to,
     };
-    constexpr size_t kReflectInstructions = 11;
+    constexpr size_t kReflectInstructions = 10;
+    const std::vector<uint32_t> fogged = {  // then the core's fog at the glass, where it is there (glass.h)
+        op_token(kFtoi, 5), temp_dst(0x3), tr, input_src(swz(0, 1, 0, 0)), position,
+        op_token(dxbc::kMov, 8), temp_dst(0xC), tr, kImm4, 0, 0, 0, 0,
+        op_token(dxbc::kLd, 7), temp_dst(0xF), tr, temp_src(swz(0, 1, 2, 3)), tr, resource_src(swz(0, 1, 2, 3)), kGlassFogSlot,
+        op_token(dxbc::kMad, 9), temp_dst(0x7), ts, temp_src(swz(0, 1, 2, 0)), to, temp_src(swz(3, 3, 3, 3)), tr,
+        temp_src(swz(0, 1, 2, 0)), tr,
+        op_token(dxbc::kMovc, 9), temp_dst(0x7), to, temp_src(swz(3, 3, 3, 3)), tr, temp_src(swz(0, 1, 2, 0)), ts,
+        temp_src(swz(0, 1, 2, 0)), to,
+    };
+    constexpr size_t kFogInstructions = 5;
+    const std::vector<uint32_t> write = {op_token(dxbc::kMov, 5), output_dst(out_mask), 0, temp_src(swz(0, 1, 2, 3)), to};
 
     std::vector<uint32_t> t;
     t.reserve(p.tokens.size() + 64);
@@ -324,7 +339,11 @@ Result patch(const void* bytes, size_t size, std::vector<uint8_t>* out, Report* 
         if (int(i) == first_input) t.insert(t.end(), dcl_position.begin(), dcl_position.end());
         if (int(i) == first_code) t.insert(t.end(), load.begin(), load.end());
         if (int(i) == combine) t.insert(t.end(), relight.begin(), relight.end());
-        if (in.opcode == dxbc::kRet) t.insert(t.end(), reflect.begin(), reflect.end());
+        if (in.opcode == dxbc::kRet) {
+            t.insert(t.end(), reflect.begin(), reflect.end());
+            if (fog) t.insert(t.end(), fogged.begin(), fogged.end());
+            t.insert(t.end(), write.begin(), write.end());
+        }
         const size_t at = t.size();
         t.insert(t.end(), p.tokens.begin() + in.offset, p.tokens.begin() + in.offset + in.length);
         if (!is_declaration(in.opcode)) {  // o0's writes to rO (its type field to temp, its index to rO's)
@@ -346,6 +365,7 @@ Result patch(const void* bytes, size_t size, std::vector<uint8_t>* out, Report* 
         if (int(i) == diffuse_dcl) {
             t.insert(t.end(), dcl_t17.begin(), dcl_t17.end());
             t.insert(t.end(), dcl_t19.begin(), dcl_t19.end());
+            if (fog) t.insert(t.end(), dcl_t21.begin(), dcl_t21.end());
         }
         if (int(i) == highlight) t.insert(t.end(), shade.begin(), shade.end());
     }
@@ -358,7 +378,7 @@ Result patch(const void* bytes, size_t size, std::vector<uint8_t>* out, Report* 
                       reinterpret_cast<const uint8_t*>(program.data()) + program.size() * 4);
     dxbc::Program check;
     if (!dxbc::decode(*shdr, &check, &error)) return fail("the rewritten program does not decode: " + error);
-    const size_t added = 5 + 1 + 1 + 2 + (first_input >= 0 ? 1 : 0) + rets * kReflectInstructions;
+    const size_t added = 5 + 1 + 1 + 2 + (fog ? 1 : 0) + (first_input >= 0 ? 1 : 0) + rets * (kReflectInstructions + 1 + (fog ? kFogInstructions : 0));
     if (check.code.size() != p.code.size() + added) return fail("the rewritten program has the wrong instruction count");
     if (out) *out = dxbc::serialize(c);
     r.result = Result::Patched;

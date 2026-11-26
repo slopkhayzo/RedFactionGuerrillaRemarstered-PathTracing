@@ -13,7 +13,8 @@
 //     frames as well, 25 % of each frame's), the cosine of its angle; 0: no glass in front of the pixel
 // And what the glass reflects (Reflections.Glass): one ray in the mirror direction off its surface, the radiance there as
 // a mirror shows it (mirror_radiance; the drawn sky where it gets out), weighted by Schlick's Fresnel term
-// (Reflections.GlassReflectance at normal incidence) and the game's fog between the camera and the glass:
+// (Reflections.GlassReflectance at normal incidence) and the game's fog between the camera and the glass (with the
+// volumetric fog in front of the glass, fog4.z, not: the patched glass shader fogs the glass and its reflection alike):
 //   glass_refl (u7, the plugin's RGBA16F, the patched glass shader's t19): rgb that weighted radiance (the game's lit
 //     colour units), a the Fresnel term; 0 where there is no glass or no reflection
 // The frame's counters (u6) from uint 60: the pixels with glass in front, those of them mostly in the sun (for the log).
@@ -162,8 +163,9 @@ void main(uint3 id : SV_DispatchThreadID) {
                                      float2(pixelAngle * t, pixelAngle));
             const float f0 = saturate(glass.x);
             const float fresnel = f0 + (1.0 - f0) * pow(1.0 - saturate(dot(-dir, n)), 5.0);
-            // as the game's colours: the radiance times pi (its lit colour, the drawn sky's), the fog's share left
-            const float3 shown = PI * max(lr, 0.0) * fog_transmittance(hp - cam_origin.xyz);
+            // as the game's colours: the radiance times pi (its lit colour, the drawn sky's), the fog's share left (the
+            // volumetric fog's in front of the glass: in the patched shader, with the glass's own colour)
+            const float3 shown = PI * max(lr, 0.0) * (fog4.z > 0.0 ? 1.0 : fog_transmittance(hp - cam_origin.xyz));
             if (all(shown == shown)) reflected = float4(fresnel * shown, fresnel);
         }
     }

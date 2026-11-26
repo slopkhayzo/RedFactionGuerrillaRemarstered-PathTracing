@@ -8,7 +8,8 @@
 // The core's volumetric fog (rtcore/shaders/fog_apply.hlsl) is in a texture the plugin binds at t18 from the frame's
 // first lit pass to the end of its lighting passes, where it blends it over the scene (render/gi.h): alpha > 0 where the
 // fog is the core's (its transmittance), 0 where not (the sky, the landmark layer). Nothing is bound there for what is
-// drawn after (the transparents keep the game's fog), with F11's vanilla view or without the core. The patch:
+// drawn after (the transparents keep the game's fog; the plain glass's shaders read the fog at the glass at t21 in its
+// place, this same patch on that slot: patch/glass.h), with F11's vanilla view or without the core. The patch:
 //   ftoi rN.xy, v<pos>.xyxx       (the pixel position, declared if the shader did not read it)
 //   mov  rN.zw, l(0, 0, 0, 0)
 //   ld   rN.w, rN.xyzw, t18.xyzw
@@ -39,6 +40,8 @@ struct Report {
 };
 const char* name(Result r);
 
-Result patch(const void* bytes, size_t size, std::vector<uint8_t>* out, Report* report);
+// `slot`: the texture read (t18; the plain glass's shaders t21, the fog at the glass in front of each pixel: patch/glass.h,
+// whose patch declares it already for its own read)
+Result patch(const void* bytes, size_t size, std::vector<uint8_t>* out, Report* report, uint32_t slot = kFogSlot);
 
 }  // namespace fog

@@ -103,7 +103,7 @@ struct Config {
 
     // [Fog] the game's fog made volumetric (with GI): its density, height falloff, start and colour, lit where the sun
     // and the sky reach it (light shafts, shadowed fog, darker indoors), in place of the game's over the lit opaque scene
-    // (patch/fog.h); the transparents keep the game's
+    // (patch/fog.h); the plain glass takes it too, at its own depth (patch/glass.h); the other transparents keep the game's
     bool fog_enabled = true;
     double fog_sun_share = 0.65;   // the share of the fog's colour the sun gives (the rest the sky): fog where both reach
                                    // is the game's colour
@@ -114,6 +114,7 @@ struct Config {
     int fog_history = 20;          // the most frames each froxel's light is averaged over (more: smoother, slower to follow)
     int fog_rays = 1;              // rays from each froxel a frame, 1 to 4 (4 anyway while it has no history yet)
     bool fog_filter = true;        // each froxel's light averaged with its neighbours' across the screen (a 3x3 tent)
+    bool fog_glass = true;         // the plain glass fogged by it at its own depth (patch/glass.h); 0: the game's fog on it
 
     // [Tonemap] the game's tone mapping while path tracing (the game's own renderer keeps its look): the bloom's strength
     // (1 the game's, 0 none: the glow it spreads around bright parts made a lit hole or window look like a lamp)

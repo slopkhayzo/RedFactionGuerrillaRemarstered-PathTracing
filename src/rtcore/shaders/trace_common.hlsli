@@ -64,7 +64,8 @@ cbuffer Frame : register(b0) {
     float4 upscale;       // DLSS (dlss.h): xy the GI's render size (0: the frame's), zw the sample's offset from each of its
                           // pixels' centres (its pixels, y down); gi_size, gi_source
     float4 fog4;          // the volumetric fog: x the rays from each froxel a frame (Fog.Rays), y 1 when the froxels' light
-                          // is smoothed across the screen before it is summed (Fog.Filter)
+                          // is smoothed across the screen before it is summed (Fog.Filter), z 1 when it is written in front
+                          // of the clear glass too (fog_apply.hlsl; the glass's reflections are then left unfaded)
 };
 
 static const float PI = 3.14159265;

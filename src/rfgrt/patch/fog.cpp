@@ -107,7 +107,7 @@ const char* name(Result r) {
     }
 }
 
-Result patch(const void* bytes, size_t size, std::vector<uint8_t>* out, Report* report) {
+Result patch(const void* bytes, size_t size, std::vector<uint8_t>* out, Report* report, uint32_t slot) {
     Report local;
     Report& r = report ? *report : local;
     auto fail = [&](const std::string& why) {
@@ -126,6 +126,7 @@ Result patch(const void* bytes, size_t size, std::vector<uint8_t>* out, Report* 
     if ((p.version >> 16) != 0) return r.result = Result::NotPixelShader;
 
     bool common = false;  // cb0 is the common fragment constants (fogColor at cb0[4])
+    bool declared = false;  // the slot declared already: the caller's own patch reads it too (t21: the glass's, glass.h)
     for (const dxbc::Binding& b : dxbc::bindings(c))
         if (b.type == 0 && b.slot == 0 && contains_nocase(b.name, "commonFragment")) common = true;
 
@@ -138,7 +139,10 @@ Result patch(const void* bytes, size_t size, std::vector<uint8_t>* out, Report* 
             continue;
         }
         if (in.opcode == dxbc::kDclResource && !in.operands.empty()) {
-            if (in.operands[0].index[0] == kFogSlot) return fail("t18 is in use");
+            if (in.operands[0].index[0] == slot) {
+                if (slot == kFogSlot) return fail("t18 is in use");  // never the game's: one there is not ours to read
+                declared = true;
+            }
             last_resource = int(i);
         } else if (in.opcode == dxbc::kDclTemps && in.length == 2) {
             temps = p.tokens[in.offset + 1];
@@ -216,17 +220,17 @@ Result patch(const void* bytes, size_t size, std::vector<uint8_t>* out, Report* 
     }
     if (temps_at < 0) return fail("no temps declared");
     const int resource_at = last_resource >= 0 ? last_resource : -1;  // the dcl after it (or before the first other's)
-    if (resource_at < 0 && first_other_dcl < 0) return fail("no place for t18's declaration");
+    if (!declared && resource_at < 0 && first_other_dcl < 0) return fail("no place for t" + std::to_string(slot) + "'s declaration");
 
     const uint32_t tn = temps;
-    // dcl_resource_texture2d (float,float,float,float) t18
-    const std::vector<uint32_t> dcl_t18 = {op_token(dxbc::kDclResource, 4) | (3u << 11), 0x00107000u, kFogSlot, 0x00005555u};
+    // dcl_resource_texture2d (float,float,float,float) t<slot>
+    const std::vector<uint32_t> dcl_t18 = {op_token(dxbc::kDclResource, 4) | (3u << 11), 0x00107000u, slot, 0x00005555u};
     // dcl_input_ps_siv linear noperspective v<position>.xy, position
     const std::vector<uint32_t> dcl_position = {op_token(dxbc::kDclInputPsSiv, 4) | (4u << 11), 0x00101032u, position, 1u};
     const std::vector<uint32_t> load = {
         op_token(kFtoi, 5), temp_dst(0x3), tn, input_src(swz(0, 1, 0, 0)), position,
         op_token(dxbc::kMov, 8), temp_dst(0xC), tn, kImm4, 0, 0, 0, 0,
-        op_token(dxbc::kLd, 7), temp_dst(0x8), tn, temp_src(swz(0, 1, 2, 3)), tn, resource_src(swz(0, 1, 2, 3)), kFogSlot,
+        op_token(dxbc::kLd, 7), temp_dst(0x8), tn, temp_src(swz(0, 1, 2, 3)), tn, resource_src(swz(0, 1, 2, 3)), slot,
         op_token(kLt, 7), temp_dst(0x8), tn, kImm1, 0u, temp_src(swz(3, 3, 3, 3)), tn,
         op_token(dxbc::kMovc, 9), temp_dst(0x1), tn, temp_src(swz(3, 3, 3, 3)), tn, kImm1, 0u,
         input_src(swz(uint32_t(comp), uint32_t(comp), uint32_t(comp), uint32_t(comp))), uint32_t(input),
@@ -237,13 +241,13 @@ Result patch(const void* bytes, size_t size, std::vector<uint8_t>* out, Report* 
     const uint32_t length = p.tokens[1];
     for (size_t i = 0; i < p.code.size(); ++i) {
         const Instruction& in = p.code[i];
-        if (resource_at < 0 && int(i) == first_other_dcl) t.insert(t.end(), dcl_t18.begin(), dcl_t18.end());
+        if (!declared && resource_at < 0 && int(i) == first_other_dcl) t.insert(t.end(), dcl_t18.begin(), dcl_t18.end());
         if (int(i) == first_input) t.insert(t.end(), dcl_position.begin(), dcl_position.end());
         if (int(i) == first_code) t.insert(t.end(), load.begin(), load.end());
         const size_t base = t.size();
         t.insert(t.end(), p.tokens.begin() + in.offset, p.tokens.begin() + in.offset + in.length);
         if (int(i) == temps_at) t[t.size() - 1] = temps + 1;
-        if (int(i) == resource_at) t.insert(t.end(), dcl_t18.begin(), dcl_t18.end());
+        if (!declared && int(i) == resource_at) t.insert(t.end(), dcl_t18.begin(), dcl_t18.end());
         for (const Use& u : uses) {
             if (u.at != int(i)) continue;
             const Operand& o = in.operands[u.k];
@@ -261,7 +265,7 @@ Result patch(const void* bytes, size_t size, std::vector<uint8_t>* out, Report* 
                       reinterpret_cast<const uint8_t*>(program.data()) + program.size() * 4);
     dxbc::Program check;
     if (!dxbc::decode(*shdr, &check, &error)) return fail("the rewritten program does not decode: " + error);
-    const size_t added = 5 + 1 + (first_input >= 0 ? 1 : 0);
+    const size_t added = 5 + (declared ? 0 : 1) + (first_input >= 0 ? 1 : 0);
     if (check.code.size() != p.code.size() + added) return fail("the rewritten program has the wrong instruction count");
     if (out) *out = dxbc::serialize(c);
     r.result = Result::Patched;

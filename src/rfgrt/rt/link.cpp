@@ -370,6 +370,15 @@ bool Link::ensure_frame_resources(uint32_t w, uint32_t h, int64_t first_frame) {
         hr = device_->CreateTexture2D(&td, nullptr, &glass_refl);
         if (SUCCEEDED(hr)) hr = device_->CreateShaderResourceView(glass_refl, nullptr, &glass_refl_srv);
     }
+    ID3D11Texture2D* glass_fog = nullptr;
+    ID3D11ShaderResourceView* glass_fog_srv = nullptr;
+    if (SUCCEEDED(hr) && glass && fog && opt_.fog_glass) {  // the fog in front of the glass (Fog.Glass): the core writes it, the
+                                                             // glass shader reads it
+        td.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+        td.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS;
+        hr = device_->CreateTexture2D(&td, nullptr, &glass_fog);
+        if (SUCCEEDED(hr)) hr = device_->CreateShaderResourceView(glass_fog, nullptr, &glass_fog_srv);
+    }
     ID3D11Texture2D* sun_tint = nullptr;
     ID3D11ShaderResourceView* sun_tint_srv = nullptr;
     if (SUCCEEDED(hr) && opt_.gi_rays > 0 && opt_.window_tint) {  // the sun through clear glass: the core writes it, the lit shaders read it
@@ -416,7 +425,12 @@ bool Link::ensure_frame_resources(uint32_t w, uint32_t h, int64_t first_frame) {
     HANDLE game_clb_nt = nullptr, game_clb_remote = nullptr, irradiance_nt = nullptr, irradiance_remote = nullptr;
     HANDLE reflection_nt = nullptr, reflection_remote = nullptr, glass_nt = nullptr, glass_remote = nullptr;
     HANDLE fog_nt = nullptr, fog_remote = nullptr, glass_refl_nt = nullptr, glass_refl_remote = nullptr;
-    HANDLE sun_tint_nt = nullptr, sun_tint_remote = nullptr;
+    HANDLE sun_tint_nt = nullptr, sun_tint_remote = nullptr, glass_fog_nt = nullptr, glass_fog_remote = nullptr;
+    if (SUCCEEDED(hr) && glass_fog) hr = share(glass_fog, &glass_fog_nt);
+    if (SUCCEEDED(hr) && glass_fog &&
+        !DuplicateHandle(GetCurrentProcess(), glass_fog_nt, process_ ? static_cast<HANDLE>(process_) : GetCurrentProcess(),
+                         &glass_fog_remote, 0, FALSE, DUPLICATE_SAME_ACCESS))
+        hr = HRESULT_FROM_WIN32(GetLastError());
     if (SUCCEEDED(hr) && sun_tint) hr = share(sun_tint, &sun_tint_nt);
     if (SUCCEEDED(hr) && sun_tint &&
         !DuplicateHandle(GetCurrentProcess(), sun_tint_nt, process_ ? static_cast<HANDLE>(process_) : GetCurrentProcess(),
@@ -478,6 +492,9 @@ bool Link::ensure_frame_resources(uint32_t w, uint32_t h, int64_t first_frame) {
         rel(glass_refl_srv);
         rel(glass_refl);
         if (glass_refl_nt) CloseHandle(glass_refl_nt);
+        rel(glass_fog_srv);
+        rel(glass_fog);
+        if (glass_fog_nt) CloseHandle(glass_fog_nt);
         rel(sun_tint_srv);
         rel(sun_tint);
         if (sun_tint_nt) CloseHandle(sun_tint_nt);
@@ -521,6 +538,9 @@ bool Link::ensure_frame_resources(uint32_t w, uint32_t h, int64_t first_frame) {
     glass_refl_ = glass_refl;
     glass_refl_srv_ = glass_refl_srv;
     glass_refl_nt_ = glass_refl_nt;
+    glass_fog_ = glass_fog;
+    glass_fog_srv_ = glass_fog_srv;
+    glass_fog_nt_ = glass_fog_nt;
     sun_tint_ = sun_tint;
     sun_tint_srv_ = sun_tint_srv;
     sun_tint_nt_ = sun_tint_nt;
@@ -547,6 +567,7 @@ bool Link::ensure_frame_resources(uint32_t w, uint32_t h, int64_t first_frame) {
     block_->glass_handle = to_u64(glass_remote);
     block_->glass_refl_handle = to_u64(glass_refl_remote);
     block_->sun_tint_handle = to_u64(sun_tint_remote);
+    block_->glass_fog_handle = to_u64(glass_fog_remote);
     block_->fog_handle = to_u64(fog_remote);
     for (uint32_t i = 0; i < rfgrt_ipc::kMaxLightMasks; ++i) block_->light_mask_handles[i] = to_u64(mask_remote[i]);
     rfgrt_ipc::store64(&block_->generation_first_frame, first_frame);
@@ -646,6 +667,9 @@ void Link::release_frame_resources() {
     rel(glass_refl_srv_);
     rel(glass_refl_);
     close_handle(glass_refl_nt_);
+    rel(glass_fog_srv_);
+    rel(glass_fog_);
+    close_handle(glass_fog_nt_);
     rel(sun_tint_srv_);
     rel(sun_tint_);
     close_handle(sun_tint_nt_);

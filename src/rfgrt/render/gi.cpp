@@ -51,6 +51,9 @@ std::atomic<uint32_t> g_floor_patched{0}, g_floor_unsupported{0}, g_sun_patched{
 bool g_glass = false;
 std::atomic<ID3D11ShaderResourceView*> g_bind_glass{nullptr};
 std::atomic<ID3D11ShaderResourceView*> g_bind_glass_refl{nullptr};  // what the clear glass reflects (t19)
+std::atomic<ID3D11ShaderResourceView*> g_bind_glass_fog{nullptr};   // the fog in front of the glass (t21; null: the game's)
+std::atomic<uint32_t> g_glass_fog_patched{0}, g_glass_fog_unsupported{0};  // its shaders with the core's fog at the glass
+bool g_glass_fog = false;  // Fog.Glass (with the glass's light and the volumetric fog)
 std::atomic<ID3D11ShaderResourceView*> g_bind_tint{nullptr};  // the sun through clear glass (t20; null: read as 0, the game's sun)
 bool g_tint = false;  // GI.WindowTint
 std::atomic<uint32_t> g_tint_patched{0}, g_tint_unsupported{0};
@@ -154,6 +157,10 @@ void __fastcall d_set_shadow_states(RFG_THIS(void*, self), void* params, uint8_t
         ctx->PSSetShaderResources(glass::kGlassSlot, 1, &gl);
     if (ID3D11ShaderResourceView* gr = g_glass ? g_bind_glass_refl.load(std::memory_order_acquire) : nullptr)
         ctx->PSSetShaderResources(glass::kGlassReflSlot, 1, &gr);
+    if (g_glass_fog) {  // (null where the core has no fog: read as 0, the game's fog on the glass)
+        ID3D11ShaderResourceView* gf = g_bind_glass_fog.load(std::memory_order_acquire);
+        ctx->PSSetShaderResources(glass::kGlassFogSlot, 1, &gf);
+    }
     if (g_tint) {  // (null where the core has none: read as 0, the game's sun)
         ID3D11ShaderResourceView* st = g_bind_tint.load(std::memory_order_acquire);
         ctx->PSSetShaderResources(sun_tint::kSunTintSlot, 1, &st);
@@ -178,6 +185,7 @@ bool install(const Config& cfg) {
     g_floor = cfg.gi_enabled && cfg.host_enabled && cfg.host_mode == 3 && cfg.shadow_specular >= 0.0 && cfg.shadow_specular < 0.05;
     g_glass = cfg.gi_enabled && cfg.gi_glass && cfg.host_enabled && cfg.host_mode == 3;
     g_fog = cfg.gi_enabled && cfg.fog_enabled && cfg.gi_debug == 0 && cfg.host_enabled && cfg.host_mode == 3;
+    g_glass_fog = g_glass && g_fog && cfg.fog_glass;
     g_tint = cfg.gi_enabled && cfg.gi_window_tint && cfg.gi_debug == 0 && cfg.host_enabled && cfg.host_mode == 3;
     g_eye = cfg.tonemap_eye_adaptation_dark >= 0.0 && cfg.host_enabled;
     if (!g_on && !lights::enabled()) return true;  // the hook below serves both (lights::install comes first)
@@ -189,7 +197,8 @@ bool install(const Config& cfg) {
 }
 
 void on_core_stop() {
-    for (std::atomic<ID3D11ShaderResourceView*>* b : {&g_bind, &g_bind_refl, &g_bind_glass, &g_bind_glass_refl, &g_bind_tint, &g_bind_fog})
+    for (std::atomic<ID3D11ShaderResourceView*>* b :
+         {&g_bind, &g_bind_refl, &g_bind_glass, &g_bind_glass_refl, &g_bind_glass_fog, &g_bind_tint, &g_bind_fog})
         b->store(nullptr, std::memory_order_release);
     g_fog_armed.store(false, std::memory_order_release);
 }
@@ -203,7 +212,7 @@ void on_render(uint8_t* renderer, uint8_t* scene) {
 void on_seam(ID3D11Device* dev, ID3D11DeviceContext* ctx, uint32_t width, uint32_t height, ID3D11ShaderResourceView* core_irradiance,
              ID3D11ShaderResourceView* core_reflection, ID3D11ShaderResourceView* core_glass,
              ID3D11ShaderResourceView* core_glass_refl, ID3D11ShaderResourceView* core_fog,
-             ID3D11ShaderResourceView* core_sun_tint) {
+             ID3D11ShaderResourceView* core_sun_tint, ID3D11ShaderResourceView* core_glass_fog) {
     if (!g_on || !dev || !ctx || !width || !height) return;
     ++g_seams;
     // The next frame's lit passes get the fog at t18 (armed here, after this frame's recording ended, and at render()'s
@@ -227,9 +236,14 @@ void on_seam(ID3D11Device* dev, ID3D11DeviceContext* ctx, uint32_t width, uint32
             ID3D11ShaderResourceView* gr = g_glass_refl_shown ? core_glass_refl : nullptr;  // (null: reads 0)
             g_bind_glass_refl.store(gr, std::memory_order_release);
             ctx->PSSetShaderResources(glass::kGlassReflSlot, 1, &gr);
+            // the fog in front of it (null without the core's fog: reads 0, the game's fog on the glass)
+            ID3D11ShaderResourceView* gf = g_glass_fog ? core_glass_fog : nullptr;
+            g_bind_glass_fog.store(gf, std::memory_order_release);
+            ctx->PSSetShaderResources(glass::kGlassFogSlot, 1, &gf);
         } else {
             g_bind_glass.store(nullptr, std::memory_order_release);
             g_bind_glass_refl.store(nullptr, std::memory_order_release);
+            g_bind_glass_fog.store(nullptr, std::memory_order_release);
         }
         ++g_core_frames;
         return;
@@ -275,6 +289,9 @@ void on_seam(ID3D11Device* dev, ID3D11DeviceContext* ctx, uint32_t width, uint32
         ID3D11ShaderResourceView* none = g_cfg.gi_debug == 0 ? g_tex.srv : nullptr;  // (the debug fills are not alpha 0)
         g_bind_glass_refl.store(none, std::memory_order_release);
         ctx->PSSetShaderResources(glass::kGlassReflSlot, 1, &none);
+        ID3D11ShaderResourceView* nofog = nullptr;  // (the game's fog on the glass)
+        g_bind_glass_fog.store(nullptr, std::memory_order_release);
+        ctx->PSSetShaderResources(glass::kGlassFogSlot, 1, &nofog);
     }
 }
 
@@ -286,7 +303,8 @@ void on_lit(uint8_t* scene_renderer, uint8_t* renderer) {
     void* inner = writer ? *reinterpret_cast<void**>(writer) : nullptr;
     auto* ctx = inner ? *reinterpret_cast<ID3D11DeviceContext**>(inner) : nullptr;
     if (!ctx) return;
-    // the fog's texture leaves t18 now: what is drawn after (the transparents) keeps the game's fog
+    // the fog's texture leaves t18 now: what is drawn after (the transparents) keeps the game's fog (the plain glass reads
+    // the core's at the glass at t21 instead: patch/glass.h)
     const bool fog = g_fog && main_scene(scene_renderer) && g_fog_armed.exchange(false, std::memory_order_acq_rel);
     if (g_fog && !fog) ++g_fog_unarmed;
     if (fog) {
@@ -373,9 +391,23 @@ bool patch_pixel_shader(const void* code, size_t size, std::vector<uint8_t>* out
     // GI's irradiance, which is the light of what is behind it (patch/glass.h)
     if (g_glass) {
         glass::Report gr;
-        const glass::Result gres = glass::patch(code, size, out, &gr);
+        const glass::Result gres = glass::patch(code, size, out, &gr, g_glass_fog);
         if (gres == glass::Result::Patched) {
             ++g_glass_patched;
+            // with the volumetric fog, the core's fog at the glass in place of the game's (t21; patch/glass.h): the game's
+            // left out where it is there; if that cannot be, the glass as before (the game's fog alone)
+            if (g_glass_fog) {
+                std::vector<uint8_t> fogged;
+                fog::Report fr;
+                if (fog::patch(out->data(), out->size(), &fogged, &fr, glass::kGlassFogSlot) == fog::Result::Patched) {
+                    *out = std::move(fogged);
+                    ++g_glass_fog_patched;
+                } else {
+                    if (g_glass_fog_unsupported.fetch_add(1) < 4)
+                        LOG("gi: a glass shader keeps the game's fog: %s", fr.reason.empty() ? fog::name(fr.result) : fr.reason.c_str());
+                    glass::patch(code, size, out, &gr, false);
+                }
+            }
             return true;
         }
         if (gres == glass::Result::Unsupported && g_glass_unsupported.fetch_add(1) < 4)
@@ -453,8 +485,9 @@ void report(bool) {
     LOG("gi: the sky's reflection scaled by the traced light in %u shaders (where the reflections could not go; %u not)",
         g_specocc_patched.load(), g_specocc_unsupported.load());
     if (g_glass)
-        LOG("gi: the glass lit by the path tracer (t%u) in %u shaders (%u not patched)", glass::kGlassSlot, g_glass_patched.load(),
-            g_glass_unsupported.load());
+        LOG("gi: the glass lit by the path tracer (t%u) in %u shaders (%u not patched); the fog in front of it the core's (t%u) "
+            "in %u of them (%u keep the game's)", glass::kGlassSlot, g_glass_patched.load(), g_glass_unsupported.load(),
+            glass::kGlassFogSlot, g_glass_fog_patched.load(), g_glass_fog_unsupported.load());
     if (g_tint)
         LOG("gi: the sun's light tinted by the clear glass it crosses (t%u) in %u shaders (%u not patched)", sun_tint::kSunTintSlot,
             g_tint_patched.load(), g_tint_unsupported.load());
