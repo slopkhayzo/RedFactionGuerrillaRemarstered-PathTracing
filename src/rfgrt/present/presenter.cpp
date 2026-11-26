@@ -1045,7 +1045,7 @@ void on_end_frame(IDXGISwapChain* chain) {
 
 }  // namespace
 
-bool install(const Config& cfg) {
+bool install(const Config& cfg, bool switchable) {
     s.presenter_only = cfg.fg_presenter;
     s.wanted.store(cfg.fg_enabled);
     framegen::set_wanted(cfg.fg_enabled);
@@ -1058,9 +1058,9 @@ bool install(const Config& cfg) {
             cfg.fg_enabled ? "wanted" : "off", cfg.fg_presenter ? "; FrameGeneration.Presenter: ours presents without it" : "");
         return true;
     }
-    // The plugins: only when wanted at start, a detour placed at the first frame's end (their scene's end: research plan
-    // 03 phase 3).
-    if (!cfg.fg_enabled && !cfg.fg_presenter) return true;
+    // The plugins: when wanted at start or switchable (the display menu's row), a detour placed at the first frame's end
+    // (their scene's end: research plan 03 phase 3).
+    if (!cfg.fg_enabled && !cfg.fg_presenter && !switchable) return true;
     screenshot::set_end_frame(&on_end_frame);
     const bool ok = screenshot::install();
     LOG("presenter: %s (frame generation %s%s)", ok ? "the game's present is hooked at its first frame" : "keen::graphics::endFrame could not be hooked",
@@ -1084,7 +1084,7 @@ void scene_rendered(void* scene_renderer, void* camera) {
 
 namespace presenter {
 
-bool install(const Config& cfg) {
+bool install(const Config& cfg, bool) {
     if (cfg.fg_enabled || cfg.fg_presenter) LOG("presenter: none in the 32-bit plugin (frame generation needs the 64-bit one)");
     return true;
 }

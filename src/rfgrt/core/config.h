@@ -86,6 +86,9 @@ struct Config {
                                   // 4 performance, 5 ultra performance (the GI traced at a share of the frame, upscaled)
     bool fg_enabled = false;      // FrameGeneration.Enabled: DLSS Frame Generation (64-bit; present/presenter.h)
     bool fg_presenter = false;    // FrameGeneration.Presenter: the presenter without generation (a test of its presents)
+
+    // [Menu]
+    bool menu_rows = true;        // Menu.Rows: the display menu's RENDERER, DLSS and FRAME GENERATION rows (menu/display_rows.h)
     bool gi_cache = true;         // the world radiance cache: the light of surfaces seen on screen, for rays hitting them later
     bool gi_glass = true;         // the game's plain glass (windows, shards) lit by the path tracer: its shadow, the light
                                   // around it (patch/glass.h; 0: the glass's own light, no shadow)
@@ -164,6 +167,9 @@ struct Config {
     int time_of_day = -1;         // the game clock set to this hour once gameplay starts, and held there (-1: the save's)
     int test_dlss_cycle_s = 0;    // Test.DlssCycle: every this many gameplay seconds the next DLSS mode (1 to 5, then 0), as
                                   // a game's DLSS setting changes it while playing (0: never)
+    std::string test_display_rows;  // Test.DisplayRows: at the main menu (before AutoLoadSave's load), the display menu opened,
+                                    // its general page saved (display_rows.png in the run folder), then these rows chosen and
+                                    // accepted: "renderer=0|1,dlss=0..5,fg=0|1" (any of them)
     int test_fg_cycle_s = 0;      // Test.FrameGenerationCycle: every this many gameplay seconds frame generation switched
                                   // (on, off, ...), as a game's setting does while playing (0: never)
     std::string wrecking_crew;    // Test.WreckingCrew: main menu -> Wrecking Crew -> this map (its file name, as

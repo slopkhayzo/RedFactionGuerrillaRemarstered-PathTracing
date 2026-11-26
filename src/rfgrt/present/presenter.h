@@ -14,9 +14,10 @@ struct Config;
 namespace presenter {
 
 // At start-up: the Present hook. On OpenRFG64 VOM's seam always (its FRAME GENERATION row switches while playing); in
-// the plugins only when the presenter is wanted at start (FrameGeneration.Enabled or .Presenter), as a detour on the
-// game's swap chain placed at its first frame's end. False when it cannot be hooked.
-bool install(const Config& cfg);
+// the plugins when the presenter is wanted at start (FrameGeneration.Enabled or .Presenter) or `switchable` (the display
+// menu's FRAME GENERATION row: menu/display_rows.h), as a detour on the game's swap chain placed at its first frame's
+// end (off, it passes every present through). False when it cannot be hooked.
+bool install(const Config& cfg, bool switchable = false);
 // Frame generation wanted or not (rfgrt_set_frame_generation; FrameGeneration.Enabled at start): from the next present.
 // Without it (and without FrameGeneration.Presenter) the game's swap chain presents again.
 void set_wanted(bool on);

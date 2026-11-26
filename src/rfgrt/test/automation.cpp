@@ -16,6 +16,7 @@
 #include "game/rfg.h"
 #include "harness/screenshot.h"
 #include "hooks/hooks.h"
+#include "menu/display_rows.h"
 #include "present/presenter.h"
 #include "rt/link.h"
 #include "test/input_script.h"
@@ -155,6 +156,97 @@ void drive_wrecking_crew(int state, double in_state_ms) {
     rfg::fn<void(__cdecl*)()>(rfg::rva::wrecking_crew_match_begin)();
 }
 
+// Test.DisplayRows (menu/display_rows.h): at the main menu, before AutoLoadSave's load, the display menu opened (its state
+// pushed, as the options menu does), its general page saved, the rows chosen as a player would, then accepted (the
+// game's display_hint_callback, which the rows hook).
+struct RowsTest {
+    int renderer = -1, dlss = -1, frame_generation = -1;
+    int step = -1;  // -1: not asked, or done
+    int64_t since = 0;
+};
+RowsTest g_rows;
+
+int enum_value(const char* name) {
+    for (const auto& s : rfg::game_state_names)
+        if (!strcmp(s.name, name)) return s.value;
+    for (const auto& h : rfg::hint_type_names)
+        if (!strcmp(h.name, name)) return h.value;
+    return -1;
+}
+
+void parse_rows_test(const std::string& spec) {
+    g_rows.step = spec.empty() ? -1 : 0;
+    for (size_t at = 0; at < spec.size();) {
+        size_t end = spec.find_first_of(",;", at);
+        if (end == std::string::npos) end = spec.size();
+        const std::string item = spec.substr(at, end - at);
+        const size_t eq = item.find('=');
+        if (eq != std::string::npos) {
+            const std::string key = item.substr(0, eq);
+            const int value = atoi(item.c_str() + eq + 1);
+            if (key == "renderer")
+                g_rows.renderer = value;
+            else if (key == "dlss")
+                g_rows.dlss = value;
+            else if (key == "fg")
+                g_rows.frame_generation = value;
+            else
+                LOG("automation: Test.DisplayRows: unknown row '%s'", key.c_str());
+        }
+        at = end + 1;
+    }
+}
+
+// True while the test holds the main menu (AutoLoadSave's load waits for it).
+bool drive_rows_test(int state, double in_state_ms) {
+    if (g_rows.step < 0) return false;
+    const double step_ms = session::ticks_to_ms(session::qpc() - g_rows.since);
+    switch (g_rows.step) {
+        case 0:
+            if (state == GS_MAINMENU && !g_caught_input && in_state_ms > 2000 && !rfg::global<uint8_t>(rfg::rva::Main_menu_auto_catch_done)) {
+                g_caught_input = true;
+                catch_keyboard_and_mouse();
+            }
+            if (state == GS_MAINMENU && in_state_ms > 3500 && main_menu_ready()) {
+                const int display = enum_value("GS_MAINMENU_OPTIONS_DISPLAY");
+                LOG("automation (Test.DisplayRows): the display menu opened from the main menu (state %d)", display);
+                rfg::fn<void(__cdecl*)(int, bool, bool)>(rfg::rva::gameseq_push_state)(display, false, false);
+                g_rows.step = 1;
+                g_rows.since = session::qpc();
+            }
+            return true;
+        case 1:
+            if (display_rows::rows_shown() && step_ms > 2500) {
+                screenshot::request(session::run_dir() + L"\\display_rows.png");
+                LOG("automation (Test.DisplayRows): the general page saved (display_rows.png)");
+            } else if (step_ms > 20000) {
+                LOG("automation (Test.DisplayRows): no rows on the display menu after 20 s");
+            } else {
+                return true;
+            }
+            g_rows.step = 2;
+            g_rows.since = session::qpc();
+            return true;
+        case 2:
+            if (step_ms > 1500) {
+                display_rows::test_choose(g_rows.renderer, g_rows.dlss, g_rows.frame_generation);
+                LOG("automation (Test.DisplayRows): accept");
+                rfg::fn<void(__cdecl*)(int)>(rfg::rva::display_hint_callback)(enum_value("HT_SELECTION"));
+                g_rows.step = 3;
+                g_rows.since = session::qpc();
+            }
+            return true;
+        default:
+            if (state == GS_MAINMENU || step_ms > 15000) {
+                LOG("automation (Test.DisplayRows): %s after %.1f s", state == GS_MAINMENU ? "back at the main menu" : "NOT back at the main menu",
+                    step_ms / 1000.0);
+                g_rows.step = -1;
+                return false;
+            }
+            return true;
+    }
+}
+
 void on_frame(int state) {
     if (state != g_last_state) {
         // a Wrecking Crew match loading (started by anyone: the player, Test.WreckingCrew, a replay): its map, for the log
@@ -168,6 +260,7 @@ void on_frame(int state) {
         g_state_since = session::qpc();
     }
     const double in_state_ms = session::ticks_to_ms(session::qpc() - g_state_since);
+    const bool rows_test = drive_rows_test(state, in_state_ms);
 
     if (!g_cfg.wrecking_crew.empty()) {
         drive_wrecking_crew(state, in_state_ms);
@@ -178,7 +271,7 @@ void on_frame(int state) {
             catch_keyboard_and_mouse();
         }
         static int64_t ready_since = 0;
-        if (state == GS_MAINMENU && !g_pressed_load && in_state_ms > 2000) {
+        if (state == GS_MAINMENU && !g_pressed_load && in_state_ms > 2000 && !rows_test) {
             if (main_menu_ready()) {
                 if (!ready_since) ready_since = session::qpc();
             } else {
@@ -285,6 +378,12 @@ bool install(const Config& cfg) {
         LOG("automation: the game keeps running without the foreground");
     }
     if (!cfg.shots_at.empty()) ok &= screenshot::install();
+    parse_rows_test(cfg.test_display_rows);
+    if (g_rows.step == 0) {
+        ok &= screenshot::install();
+        LOG("automation: Test.DisplayRows: the display menu's rows chosen at the main menu (RENDERER %d, DLSS %d, FRAME GENERATION %d; -1 as they are)",
+            g_rows.renderer, g_rows.dlss, g_rows.frame_generation);
+    }
     if (!cfg.input_script.empty()) ok &= input_script::install(cfg.input_script);
     session::add_frame_callback(&on_frame);
     return ok;

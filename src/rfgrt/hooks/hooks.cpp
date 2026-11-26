@@ -79,6 +79,8 @@ bool create_now(void* target, void* detour, void** original, const char* name) {
 
 void set_binding(const rfgrt_binding& binding) { g_binding = binding; }
 
+bool bound() { return g_binding.attach != nullptr; }
+
 bool seam(const char* name, void* detour, void** original) {
     if (!g_binding.attach || !g_binding.attach(name, nullptr, detour, original, false)) {
         LOG("hook %s: the game has no such seam", name);

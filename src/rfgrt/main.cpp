@@ -18,6 +18,7 @@
 #include "harness/shader_dump.h"
 #include "hooks/binding.h"
 #include "hooks/hooks.h"
+#include "menu/display_rows.h"
 #include "mirror/geometry.h"
 #include "mirror/instances.h"
 #include "mirror/textures.h"
@@ -28,6 +29,10 @@
 #include "render/sky_particles.h"
 #include "rt/link.h"
 #include "test/automation.h"
+
+// (defined below; the display menu's rows call them as a game with rows of its own does)
+extern "C" __declspec(dllexport) void rfgrt_set_dlss_mode(int mode);
+extern "C" __declspec(dllexport) void rfgrt_set_frame_generation(int on);
 
 namespace {
 
@@ -81,6 +86,10 @@ void init() {
         LOG("disabled in config");
         return;
     }
+    // The display menu's rows (menu/display_rows.h), in a game without rows of its own: OpenRFG64 VOM binds its seams
+    // and sets the renderer, DLSS and frame generation itself, before InitializeASI.
+    const bool rows = cfg.menu_rows && !hooks::bound() && !active::switchable() && InterlockedCompareExchange(&g_dlss_mode, 0, 0) < 0 &&
+                      InterlockedCompareExchange(&g_frame_generation, 0, 0) < 0;
     if (!hooks::init()) return;
     if (!gameloop::install()) {
         LOG("main-loop hook failed: plugin stays inactive");
@@ -185,7 +194,16 @@ void init() {
         const LONG game = InterlockedCompareExchange(&g_frame_generation, 0, 0);
         Config fg = cfg;
         if (game >= 0) fg.fg_enabled = game != 0;  // the game's setting (rfgrt_set_frame_generation) before its start
-        if (!presenter::install(fg)) LOG("presenter hooks failed: no frame generation");
+        if (!presenter::install(fg, rows)) LOG("presenter hooks failed: no frame generation");
+    }
+    if (rows) {
+#if defined(_WIN64) && defined(RFGRT_STREAMLINE)
+        constexpr bool kFrameGeneration = true;
+#else
+        constexpr bool kFrameGeneration = false;  // (the 32-bit plugin has no presenter; a build without Streamline no DLSS-G)
+#endif
+        const display_rows::Actions actions{&rfgrt_set_dlss_mode, &rfgrt_set_frame_generation};
+        display_rows::install(cfg, dir + L"\\rfgrt.ini", kFrameGeneration, actions);
     }
     if (!hooks::enable_all()) return;
     if (hooks::seamed() > 0) LOG("hooks: %d on the game's seams", hooks::seamed());
