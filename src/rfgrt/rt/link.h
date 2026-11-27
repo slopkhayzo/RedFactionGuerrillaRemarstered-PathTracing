@@ -64,6 +64,7 @@ struct Options {
     int fog_history = 20;      // Fog.History
     int fog_rays = 1;          // Fog.Rays
     bool fog_filter = true;    // Fog.Filter
+    bool fog_walls = true;     // Fog.Walls
     bool fog_glass = true;     // Fog.Glass: the fog in front of the glass, a texture the core writes, the glass shader reads at t21
     float gi_sky_drawn = 1.0f;  // the drawn sky for rays that get out (GI.SkyDrawn)
     int light_masks = 0;      // shadow masks of dynamic lights (0: none)

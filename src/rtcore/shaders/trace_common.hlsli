@@ -65,7 +65,8 @@ cbuffer Frame : register(b0) {
                           // pixels' centres (its pixels, y down); gi_size, gi_source
     float4 fog4;          // the volumetric fog: x the rays from each froxel a frame (Fog.Rays), y 1 when the froxels' light
                           // is smoothed across the screen before it is summed (Fog.Filter), z 1 when it is written in front
-                          // of the clear glass too (fog_apply.hlsl; the glass's reflections are then left unfaded)
+                          // of the clear glass too (fog_apply.hlsl; the glass's reflections are then left unfaded), w 1
+                          // when the froxels' points behind the scene's surfaces are left out (Fog.Walls, fog_inject.hlsl)
 };
 
 static const float PI = 3.14159265;

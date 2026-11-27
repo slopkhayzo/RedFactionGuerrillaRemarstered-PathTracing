@@ -690,11 +690,12 @@ int run(const RunParams& p) {
                 } else {
                     logf("fog: volumetric (Fog.Enabled): the game's fog lit where the sun and the sky reach it, %u froxels across "
                          "the screen, %u slices from %.1f m to the far plane, %d ray(s) from each a frame along low-discrepancy "
-                         "sequences, averaged over up to %d frames%s; the sun's share %.2f, anisotropy %.2f; %.0f%% of the fog "
-                         "within the game's start kept (Fog.Near)",
+                         "sequences, averaged over up to %d frames%s%s; the sun's share %.2f, anisotropy %.2f; %.0f%% of the "
+                         "fog within the game's start kept (Fog.Near)",
                          kFogColumns, kFogSlices, kFogNear, b->fog_rays, b->fog_history,
-                         b->fog_filter ? ", smoothed across the screen (Fog.Filter)" : "", b->fog_sun_share, b->fog_anisotropy,
-                         b->fog_near * 100.0);
+                         b->fog_filter ? ", smoothed across the screen (Fog.Filter)" : "",
+                         b->fog_walls ? ", their points behind the scene's surfaces left out (Fog.Walls)" : "", b->fog_sun_share,
+                         b->fog_anisotropy, b->fog_near * 100.0);
                     if (glassPso)
                         logf("fog: in front of the clear glass too, when the plugin gives it a texture (Fog.Glass): at the "
                              "glass's depth, the patched glass shader's t21, over the glass and what it reflects in place of the "
@@ -1850,6 +1851,7 @@ int run(const RunParams& p) {
                             g.fog3[3] = float(b->fog_history > 0 ? b->fog_history : 20);
                             g.fog4[0] = float(b->fog_rays > 0 ? b->fog_rays : 1);
                             g.fog4[1] = b->fog_filter ? 1.0f : 0.0f;
+                            g.fog4[3] = b->fog_walls ? 1.0f : 0.0f;
                             // the fog in front of the clear glass (fog_apply.hlsl, after the glass's passes): written then,
                             // and the glass's reflections left unfaded (the patched glass shader fogs them with the glass)
                             g.fog4[2] = set.glass_fog && set.glass_raw && glassPso && glassFilterPso && set.glass ? 1.0f : 0.0f;

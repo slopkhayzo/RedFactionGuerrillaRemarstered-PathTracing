@@ -114,6 +114,8 @@ struct Config {
     int fog_history = 20;          // the most frames each froxel's light is averaged over (more: smoother, slower to follow)
     int fog_rays = 1;              // rays from each froxel a frame, 1 to 4 (4 anyway while it has no history yet)
     bool fog_filter = true;        // each froxel's light averaged with its neighbours' across the screen (a 3x3 tent)
+    bool fog_walls = true;         // the froxels' points behind the scene's surfaces left out of their light (a froxel
+                                   // across a wall no longer brings the lit fog beyond it into a dark room)
     bool fog_glass = true;         // the plain glass fogged by it at its own depth (patch/glass.h); 0: the game's fog on it
 
     // [Tonemap] the game's tone mapping while path tracing (the game's own renderer keeps its look): the bloom's strength

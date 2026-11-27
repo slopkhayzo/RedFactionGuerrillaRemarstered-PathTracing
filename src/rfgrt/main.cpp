@@ -148,6 +148,7 @@ void init() {
     link.fog_history = cfg.fog_history < 1 ? 1 : cfg.fog_history > 200 ? 200 : cfg.fog_history;
     link.fog_rays = cfg.fog_rays < 1 ? 1 : cfg.fog_rays > 4 ? 4 : cfg.fog_rays;
     link.fog_filter = cfg.fog_filter;
+    link.fog_walls = cfg.fog_walls;
     link.fog_glass = cfg.fog_glass;
     link.gi_sky_drawn = float(cfg.gi_sky_drawn < 0.0 ? 0.0 : cfg.gi_sky_drawn > 2.0 ? 2.0 : cfg.gi_sky_drawn);
     link.refl_enabled = cfg.refl_enabled && cfg.host_enabled && cfg.host_mode == rfgrt_ipc::kModeSunShadows;
