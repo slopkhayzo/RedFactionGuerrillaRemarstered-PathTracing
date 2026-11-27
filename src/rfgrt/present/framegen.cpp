@@ -64,6 +64,12 @@ struct State {
     uint64_t presents = 0, inputs = 0, input_failures = 0;
     double sleep_ms_sum = 0.0, sleep_ms_max = 0.0;
     uint64_t sleeps = 0;
+    // DLSS-G allocates for the size of the frame and of the depth and motion it is turned on with (no dynamic resolution
+    // here): those (0: not known then, the first tagged frame's taken), and the latest inputs'
+    unsigned on_w = 0, on_h = 0, on_depth_w = 0, on_depth_h = 0;
+    unsigned seen_w = 0, seen_h = 0, seen_depth_w = 0, seen_depth_h = 0;
+    bool reset_next = false;  // DLSS-G back on for a new size: its first frame without history
+    uint64_t resizes = 0;     // times it went off and on again for a new size
     std::atomic<int> info_lines{0}, problem_lines{0}, framegen_lines{0};
 } s;
 
@@ -179,8 +185,21 @@ void apply_mode() {
     options.numFramesToGenerate = 1;
     // full-screen menus over the frame (the UI layer covers the screen): DLSS-G pauses itself
     options.flags = sl::DLSSGFlags::eRetainResourcesWhenOff | sl::DLSSGFlags::eEnableFullscreenMenuDetection;
+    // the sizes its inputs have had (it allocates for them now; unknown yet: for the first tagged frame's)
+    if (on && s.seen_w && s.seen_depth_w) {
+        options.colorWidth = s.seen_w;
+        options.colorHeight = s.seen_h;
+        options.mvecDepthWidth = s.seen_depth_w;
+        options.mvecDepthHeight = s.seen_depth_h;
+    }
     const sl::Result r = s.api.dlssg_set_options(sl::ViewportHandle(0u), options);
     if (r != sl::Result::eOk) LOG("frame generation: slDLSSGSetOptions(%s) failed (result %d)", on ? "on" : "off", int(r));
+    if (on) {
+        s.on_w = s.seen_w;
+        s.on_h = s.seen_h;
+        s.on_depth_w = s.seen_depth_w;
+        s.on_depth_h = s.seen_depth_h;
+    }
     s.applied = on;
     s.applied_once = true;
     LOG("frame generation: DLSS-G %s", on ? "on (one generated frame between each two)"
@@ -328,6 +347,32 @@ bool set_inputs(ID3D12GraphicsCommandList* list, const Camera& c, const Inputs& 
     // the presented frame is the game's (not jittered); the motion in pixels of its own size, the camera's included
     const unsigned depth_width = in.depth_width ? in.depth_width : in.width;
     const unsigned depth_height = in.depth_height ? in.depth_height : in.height;
+    // A new size of the frame, or of the depth and motion (the game's DLSS mode changed while playing: its scene drawn at
+    // another size), while DLSS-G runs: it would go on with what it allocated for the old size, its frames made with
+    // the motion read wrongly until it was turned off and on again (a level's load). As NVIDIA's guide asks (DLSS-G off
+    // when the resolution changes): off now with its resources freed, on again at the next present for this size.
+    s.seen_w = in.width;
+    s.seen_h = in.height;
+    s.seen_depth_w = depth_width;
+    s.seen_depth_h = depth_height;
+    if (s.applied && !s.on_w) {  // turned on before any inputs: it takes these
+        s.on_w = in.width;
+        s.on_h = in.height;
+        s.on_depth_w = depth_width;
+        s.on_depth_h = depth_height;
+    } else if (s.applied && (in.width != s.on_w || in.height != s.on_h || depth_width != s.on_depth_w || depth_height != s.on_depth_h)) {
+        sl::DLSSGOptions off{};
+        off.mode = sl::DLSSGMode::eOff;
+        off.flags = sl::DLSSGFlags::eEnableFullscreenMenuDetection;  // (not retained: freed)
+        const sl::Result r = s.api.dlssg_set_options(sl::ViewportHandle(0u), off);
+        LOG("frame generation: its inputs' size changed (the frame %ux%u, the depth and motion %ux%u; they were %ux%u and "
+            "%ux%u): DLSS-G off, its resources freed (result %d), on again at the next present for the new size",
+            in.width, in.height, depth_width, depth_height, s.on_w, s.on_h, s.on_depth_w, s.on_depth_h, int(r));
+        s.applied = false;
+        s.reset_next = true;
+        ++s.resizes;
+        return false;
+    }
     k.jitterOffset = sl::float2(0.0f, 0.0f);
     k.mvecScale = sl::float2(1.0f / float(depth_width), 1.0f / float(depth_height));
     k.cameraPinholeOffset = sl::float2(0.0f, 0.0f);
@@ -342,7 +387,8 @@ bool set_inputs(ID3D12GraphicsCommandList* list, const Camera& c, const Inputs& 
     k.depthInverted = c.depth_inverted ? sl::Boolean::eTrue : sl::Boolean::eFalse;
     k.cameraMotionIncluded = sl::Boolean::eTrue;
     k.motionVectors3D = sl::Boolean::eFalse;
-    k.reset = c.reset ? sl::Boolean::eTrue : sl::Boolean::eFalse;
+    k.reset = c.reset || s.reset_next ? sl::Boolean::eTrue : sl::Boolean::eFalse;
+    s.reset_next = false;
     k.orthographicProjection = sl::Boolean::eFalse;
     k.motionVectorsDilated = sl::Boolean::eFalse;
     k.motionVectorsJittered = sl::Boolean::eFalse;
@@ -402,10 +448,12 @@ void report(double seconds) {
                      static_cast<unsigned long long>(g.estimatedVRAMUsageInBytes >> 20));
     }
     LOG("frame generation over %.1f s: %llu presents through Streamline, %llu with the inputs (%llu refused); Reflex slept "
-        "%.2f ms avg / %.1f max a frame; DLSS-G %s (%s)",
+        "%.2f ms avg / %.1f max a frame; DLSS-G %s (%s); the depth and motion %ux%u, off and on again for a new size %llu "
+        "times so far",
         seconds, static_cast<unsigned long long>(s.presents), static_cast<unsigned long long>(s.inputs),
         static_cast<unsigned long long>(s.input_failures), s.sleeps ? s.sleep_ms_sum / double(s.sleeps) : 0.0,
-        s.sleep_ms_max, s.applied ? "on" : "off", state);
+        s.sleep_ms_max, s.applied ? "on" : "off", state, s.seen_depth_w, s.seen_depth_h,
+        static_cast<unsigned long long>(s.resizes));
     s.presents = s.inputs = s.input_failures = s.sleeps = 0;
     s.sleep_ms_sum = s.sleep_ms_max = 0.0;
 }
