@@ -105,13 +105,16 @@ const char* const kShaderNames[] = {
     "rfg-vfx-mask-scroll-b", "rfg-vfx-shield", "rfg-vfx-volfog", "rfg-gps_chevron", "rfg-decal-glasscrack",
     "rfg-decal-bloodsplat", "rfg-stitchpiece", "rfg-metal", "rfg-brdf", "rfg-edf-vhc", "rfg-ed-oasisroof", "rfg-radiance",
     "rfg-heat-map", "rfg-orbital", "rfg-mp-nodecal_rimlight", "rfg-nodecal_rimlight", "rfg-blend-std-metal", "rfg-e-metal",
-    "rfg-ed-metal", "rfg-brdf-env", "rfg-skin", "rfg-terrainblend"};
+    "rfg-ed-metal", "rfg-brdf-env", "rfg-skin", "rfg-terrainblend", "rfg-brdf-cloth_rimlight", "rfg-brdf-cloth",
+    "rfg-skinshader"};
 constexpr size_t kShaderNameCount = sizeof(kShaderNames) / sizeof(kShaderNames[0]);
 uint32_t g_shader_handles[kShaderNameCount];  // [0] rfg-glass, [1] rfg-glass-etched: also the faders' glass (glass_of)
 constexpr uint32_t kShaderUnread = 0xFFFFFFFDu;  // an entry whose material was not read (no handle is)
 std::mutex g_glass_shader_mutex;
 std::unordered_map<uint32_t, uint64_t> g_glass_shaders;  // shader handle -> transparent or translucent entries read
 std::unordered_map<uint32_t, uint64_t> g_fader_shaders;  // shader handle -> the vehicles' and the faders' entries read
+std::unordered_map<uint32_t, uint64_t> g_skinned_shaders;  // shader handle -> the skinned meshes' (characters') entries
+std::unordered_map<const uint8_t*, const void*> g_skinned_maps;  // their maps read (-> their entries' array)
 
 void lookup_eosglass() {
     if (g_eosglass_looked) return;
@@ -181,6 +184,24 @@ std::string shaders_described(const std::unordered_map<uint32_t, uint64_t>& coun
         s += item;
     }
     return s.empty() ? "none" : s;
+}
+
+// Telemetry: the shaders a skinned mesh's (a character's) material map draws with, each map's entries once.
+void count_skinned_shaders(const uint8_t* map) {
+    const uint32_t* materials = nullptr;
+    uint32_t num = 0;
+    if (!map || !map_entries(map, &materials, &num) || !materials || !num || num > 4096) return;
+    if (g_skinned_maps.size() > 4096) g_skinned_maps.clear();
+    const void*& seen = g_skinned_maps[map];
+    if (seen == materials) return;
+    seen = materials;
+    lookup_eosglass();
+    uint32_t translucent = 0, shaders[31];
+    for (uint32_t& h : shaders) h = kShaderUnread;
+    transparent_entries(materials, num, &translucent, shaders);
+    std::lock_guard<std::mutex> lock(g_glass_shader_mutex);
+    for (uint32_t i = 0; i < 31; ++i)
+        if (shaders[i] != kShaderUnread) ++g_skinned_shaders[shaders[i]];
 }
 
 // `vehicle`: a vehicle's map (rl_deformable_mesh_instance), every entry flagged transparent however many it has.
@@ -656,6 +677,8 @@ void log_stats(Stats st) {
         shaders_described(g_glass_shaders).c_str());
     LOG("instances: the vehicles' and the fading objects' materials' shaders (material map entries read): %s",
         shaders_described(g_fader_shaders).c_str());
+    LOG("instances: the skinned meshes' (the characters') materials' shaders (each map's entries once): %s",
+        shaders_described(g_skinned_shaders).c_str());
     LOG("instances: meshes' materials sent to the core: %llu records (%llu of them before all their textures were there), "
         "%zu meshes waiting for theirs; %llu material map entries read (%llu naming a diffuse map, %llu unreadable)",
         static_cast<unsigned long long>(g_materials_records), static_cast<unsigned long long>(g_materials_partial),
@@ -963,6 +986,7 @@ void snapshot(uint8_t* renderer, uint8_t* scene, uint8_t* camera, int64_t frame)
                 uint32_t mclear = 0, mtranslucent = 0;
                 uint8_t* const mmap = rfg::field<uint8_t*>(inst, rfg::off::MeshInstance_matMap);
                 const uint32_t gw = glass_of(mmap, &mclear, &mtranslucent);
+                if (cls == g_class.skin_instance) count_skinned_shaders(mmap);
                 send_mesh_materials(mesh, mmap, mclear, mtranslucent);
                 emit(world, mesh, rfg::field<uint32_t>(inst, rfg::off::MeshInstance_submeshIndex),
                      cls == g_class.skin_instance ? rfgrt_frame::kKindSkinned : rfgrt_frame::kKindMesh, pass, gw);

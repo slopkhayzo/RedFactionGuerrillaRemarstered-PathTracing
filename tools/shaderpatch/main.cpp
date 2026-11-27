@@ -33,6 +33,9 @@
 // The fog's patch (patch/fog.h), last, on the shader as the plugin has it by then (as the shadow floor's above, or the
 // original): XA with t18's alpha 0 it is that shader; XB with alpha 0.6 (the core's fog there) it is that shader with
 // the fog's input component 0 (no fog of the game's).
+// The cloth's rim light (patch/rim_light.h), on the GI-patched shader: RA with t14's alpha 0 it is that shader (the
+// game's rim); RB with alpha 1 (traced) it is that shader with the rim's factor 0 (rim_light::scaled); each counts the
+// settings in which the rim showed at all (the game's rim against none differ).
 // The fog at the glass (patch/glass.h `fog`, then the fog's patch on t21, on the original as the plugin does): GF0 with
 // t21's alpha 0 it is the glass-patched shader; GF1 with t21 = (S, T) it is that shader with the fog's input component 0,
 // its colour times T plus S.
@@ -60,6 +63,7 @@
 #include "patch/fog.h"
 #include "patch/glass.h"
 #include "patch/light_pass.h"
+#include "patch/rim_light.h"
 #include "patch/shadow_floor.h"
 #include "patch/spec_occlusion.h"
 #include "patch/sun_tint.h"
@@ -201,8 +205,11 @@ bool read_interface(const std::vector<uint8_t>& blob, Interface* out) {
             out->samplers.push_back(in.operands[0].index[0]);
         } else if (in.opcode == dxbc::kDclConstantBuffer && !in.operands.empty()) {
             out->cbuffers[in.operands[0].index[0]] = in.operands[0].index[1];
-        } else if ((in.opcode == 98 || in.opcode == 99 || in.opcode == 100) && !in.operands.empty()) {
-            out->input_registers = std::max(out->input_registers, in.operands[0].index[0] + 1);
+        } else if (in.opcode == 98 || in.opcode == 99 || in.opcode == 100) {
+            // dcl_input_ps(_sgv, _siv): the decoder reads the operand of _siv only; the others' register is the token
+            // after their operand's (until 11-27 they were not counted: every input but the position was 0 in the checks)
+            const uint32_t reg = !in.operands.empty() ? in.operands[0].index[0] : in.length >= 3 ? p.tokens[in.offset + 2] : 0;
+            out->input_registers = std::max(out->input_registers, reg + 1);
         }
     }
     return true;
@@ -448,6 +455,9 @@ int wmain(int argc, wchar_t** argv) {
     std::vector<std::string> sun_term_shaders;
     std::map<std::string, size_t> specocc_results;
     size_t specocc_created = 0, specocc_checks = 0, specocc_passed = 0;
+    std::map<std::string, size_t> rim_results;
+    std::vector<std::string> rim_shaders;
+    size_t rim_created = 0, rim_checks = 0, rim_passed = 0, rim_settings = 0, rim_shown = 0;
     std::map<std::string, size_t> fog_results;
     std::map<std::string, size_t> tint_results;
     size_t tint_created = 0, tint_checks = 0, tint_passed = 0;
@@ -1031,6 +1041,59 @@ int wmain(int argc, wchar_t** argv) {
             }
         }
 
+        // --- the cloth's rim light (patch/rim_light.h), on the GI-patched shader ---
+        {
+            std::vector<uint8_t> rim, rim0;
+            rim_light::Report lr;
+            const rim_light::Result lres = rim_light::patch(patched.data(), patched.size(), 0.0f, &rim, &lr);
+            ++rim_results[rim_light::name(lres)];
+            if (lres == rim_light::Result::Unsupported) problems.push_back(shader + ": rim light not scaled: " + lr.reason);
+            Interface fl;
+            if (lres == rim_light::Result::Patched && read_interface(rim, &fl) &&
+                rim_light::scaled(patched.data(), patched.size(), 0.0f, &rim0, nullptr) == rim_light::Result::Patched) {
+                rim_shaders.push_back(shader);
+                const std::string ltext = disassemble(rim);
+                if (!ltext.empty())
+                    std::ofstream(entry.path().parent_path() / (entry.path().stem().string() + ".rim.asm"), std::ios::binary) << ltext;
+                ID3D11PixelShader* lps = nullptr;
+                if (SUCCEEDED(dev->CreatePixelShader(rim.data(), rim.size(), nullptr, &lps))) {
+                    ++rim_created;
+                    lps->Release();
+                } else {
+                    problems.push_back(shader + ": the rim-patched shader is refused by CreatePixelShader");
+                }
+                // `a` (the GI-patched shader as `fp` reads it, or it with the rim's factor 0) against the patched one
+                auto rim_check = [&](const char* what, const std::vector<uint8_t>& a, Setting& st) {
+                    Float4 x, y;
+                    ++rim_checks;
+                    if (!runner.run(a, fp, st.inputs, st.textures, st.constants, &x) ||
+                        !runner.run(rim, fl, st.inputs, st.textures, st.constants, &y)) {
+                        problems.push_back(shader + ": rim light " + what + ": a run failed");
+                        return;
+                    }
+                    if ((cleared(x) && cleared(y)) || same(x, y)) {
+                        ++rim_passed;
+                        return;
+                    }
+                    problems.push_back(shader + ": rim light " + what + ": expected " + str(x) + ", patched " + str(y));
+                };
+                for (int trial = 0; trial < 8; ++trial) {
+                    Setting st = made_up(fl, rng);
+                    if ((trial & 1) && st.inputs.size() > 3)  // the light (v2) and the eye (v3) behind the surface: the rim
+                        st.inputs[2] = st.inputs[3] = Float4{{0.05f, 0.05f, -1.0f, 1.0f}};
+                    st.textures[ambient::kIrradianceSlot].v[3] = 0.0f;
+                    rim_check("RA (alpha 0: the game's rim)", patched, st);
+                    st.textures[ambient::kIrradianceSlot].v[3] = 1.0f;
+                    rim_check("RB (traced: no rim)", rim0, st);
+                    Float4 g, n;  // the rim there at all: the game's against none
+                    ++rim_settings;
+                    if (runner.run(patched, fp, st.inputs, st.textures, st.constants, &g) &&
+                        runner.run(rim0, fp, st.inputs, st.textures, st.constants, &n) && !same(g, n))
+                        ++rim_shown;
+                }
+            }
+        }
+
         // --- the reflections' patch, on the GI-patched shader (as the game will have it) ---
         std::vector<uint8_t> refl;
         ambient::Report rr;
@@ -1202,6 +1265,12 @@ int wmain(int argc, wchar_t** argv) {
     rep << "sky reflection's occlusion (on the GI-patched shaders the reflections' patch left):";
     for (const auto& [k, v] : specocc_results) rep << " " << k << " " << v << ";";
     rep << " patched ones created " << specocc_created << "; " << specocc_passed << " of " << specocc_checks << " checks agree\n";
+    rep << "rim light's patch (on the GI-patched shaders):";
+    for (const auto& [k, v] : rim_results) rep << " " << k << " " << v << ";";
+    rep << " patched ones created " << rim_created << "; " << rim_passed << " of " << rim_checks << " checks agree; the rim "
+        << "showing in " << rim_shown << " of " << rim_settings << " settings; in:";
+    for (const std::string& g : rim_shaders) rep << " " << g;
+    rep << "\n";
     rep << "the sun's terms that never met the shadow, shadowed (" << sun_term_shaders.size() << " shaders):";
     for (const std::string& g : sun_term_shaders) rep << " " << g;
     rep << "\n";

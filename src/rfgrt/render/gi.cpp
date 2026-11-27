@@ -19,6 +19,7 @@
 #include "patch/glass.h"
 #include "patch/shadow_floor.h"
 #include "patch/sun_tint.h"
+#include "patch/rim_light.h"
 #include "patch/spec_occlusion.h"
 #include "render/seam.h"
 #include "rt/link.h"
@@ -62,6 +63,10 @@ size_t g_glass_refl_next = 0;    // the next of its seconds
 std::atomic<uint32_t> g_glass_patched{0}, g_glass_unsupported{0};
 // The sky's reflection scaled by the traced light where the reflections' patch could not go (patch/spec_occlusion.h)
 std::atomic<uint32_t> g_specocc_patched{0}, g_specocc_unsupported{0};
+// The characters' cloth's rim light scaled where the path tracer lights them (GI.RimLight, patch/rim_light.h)
+bool g_rim = false;
+float g_rim_scale = 0.0f;
+std::atomic<uint32_t> g_rim_patched{0}, g_rim_unsupported{0};
 // The volumetric fog (Fog.Enabled): the core's at t18 from the frame's first lit pass (armed at render()'s start) to the
 // end of its lighting passes, where it is blended over the scene (patch/fog.h)
 bool g_fog = false;
@@ -187,6 +192,8 @@ bool install(const Config& cfg) {
     g_fog = cfg.gi_enabled && cfg.fog_enabled && cfg.gi_debug == 0 && cfg.host_enabled && cfg.host_mode == 3;
     g_glass_fog = g_glass && g_fog && cfg.fog_glass;
     g_tint = cfg.gi_enabled && cfg.gi_window_tint && cfg.gi_debug == 0 && cfg.host_enabled && cfg.host_mode == 3;
+    g_rim_scale = float(cfg.gi_rim_light < 0.0 ? 0.0 : cfg.gi_rim_light > 1.0 ? 1.0 : cfg.gi_rim_light);
+    g_rim = cfg.gi_enabled && cfg.gi_debug == 0 && cfg.host_enabled && cfg.host_mode == 3 && g_rim_scale < 1.0f;
     g_eye = cfg.tonemap_eye_adaptation_dark >= 0.0 && cfg.host_enabled;
     if (!g_on && !lights::enabled()) return true;  // the hook below serves both (lights::install comes first)
     if (g_on) session::add_flush_handler(&report);
@@ -475,6 +482,18 @@ bool patch_pixel_shader(const void* code, size_t size, std::vector<uint8_t>* out
             LOG("gi: a lit shader's sun not tinted by the clear glass: %s", tr.reason.c_str());
         }
     }
+    // the cloth's rim light (rfg-brdf-cloth_rimlight), on a base lit pass as patched so far: scaled where traced
+    if (g_rim && r == ambient::Result::Patched) {
+        std::vector<uint8_t> rl;
+        rim_light::Report lr;
+        const rim_light::Result l = rim_light::patch(out->data(), out->size(), g_rim_scale, &rl, &lr);
+        if (l == rim_light::Result::Patched) {
+            *out = std::move(rl);
+            ++g_rim_patched;
+        } else if (l == rim_light::Result::Unsupported && g_rim_unsupported.fetch_add(1) < 4) {
+            LOG("gi: a lit shader's rim light not scaled: %s", lr.reason.c_str());
+        }
+    }
     return patched;
 }
 
@@ -491,6 +510,9 @@ void report(bool) {
     if (g_tint)
         LOG("gi: the sun's light tinted by the clear glass it crosses (t%u) in %u shaders (%u not patched)", sun_tint::kSunTintSlot,
             g_tint_patched.load(), g_tint_unsupported.load());
+    if (g_rim)
+        LOG("gi: the characters' cloth's rim light times %g where the path tracer lights it (GI.RimLight) in %u shaders (%u not "
+            "patched)", double(g_rim_scale), g_rim_patched.load(), g_rim_unsupported.load());
     if (g_fog)
         LOG("gi: the volumetric fog (t%u): the game's fog left out where it is in %u shaders (%u lit passes adding its colour, "
             "the others lights' passes; %u not patched); bound for %llu lit passes, blended over the lit scene in %llu frames "

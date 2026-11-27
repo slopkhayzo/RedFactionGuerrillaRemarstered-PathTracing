@@ -113,7 +113,8 @@ if(RFGRT_X64)
     # The shader patcher's offline check on the game's extracted shaders (tools/shaderpatch/main.cpp).
     add_executable(shaderpatch tools/shaderpatch/main.cpp src/rfgrt/patch/dxbc.cpp src/rfgrt/patch/ambient.cpp
         src/rfgrt/patch/light_pass.cpp src/rfgrt/patch/shadow_floor.cpp src/rfgrt/patch/glass.cpp
-        src/rfgrt/patch/spec_occlusion.cpp src/rfgrt/patch/fog.cpp src/rfgrt/patch/sun_tint.cpp)
+        src/rfgrt/patch/spec_occlusion.cpp src/rfgrt/patch/fog.cpp src/rfgrt/patch/sun_tint.cpp
+        src/rfgrt/patch/rim_light.cpp)
     target_include_directories(shaderpatch PRIVATE src/rfgrt)
     target_compile_definitions(shaderpatch PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
     target_compile_options(shaderpatch PRIVATE /W4 /permissive- /utf-8 /Zi)
@@ -171,6 +172,7 @@ add_library(rfgrt SHARED
     src/rfgrt/patch/glass.cpp
     src/rfgrt/patch/sun_tint.cpp
     src/rfgrt/patch/spec_occlusion.cpp
+    src/rfgrt/patch/rim_light.cpp
     src/rfgrt/patch/fog.cpp
     src/rfgrt/patch/eye_adaption.cpp
     src/rfgrt/present/presenter.cpp
