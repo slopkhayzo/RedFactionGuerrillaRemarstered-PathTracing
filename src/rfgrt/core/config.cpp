@@ -167,6 +167,7 @@ Config load_config(const std::wstring& ini) {
     c.vanilla_key = get_int(ini, L"Test", L"VanillaKey", 0x7A);
     c.vanilla_at = get_list(ini, L"Test", L"VanillaAt");
     c.glass_refl_at = get_list(ini, L"Test", L"GlassReflectionsAt");
+    c.vehicle_glass_at = get_list(ini, L"Test", L"VehicleGlassAt");
     c.wrecking_crew = narrow(get_string(ini, L"Test", L"WreckingCrew", L""));
     return c;
 }

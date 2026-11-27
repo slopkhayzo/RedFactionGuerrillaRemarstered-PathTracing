@@ -46,18 +46,25 @@ std::unordered_map<const uint8_t*, BuildingCache> g_buildings;
 // Glass: which of an instance's materials are transparent (rl_material_data::mat_flags bit 0, as
 // rl_material::get_is_transparent reads it), bit i for its material map's entry i (the first 32); the core lets rays
 // through what they draw (tlas.cpp). Kept per material map, checked against its entries' array and count each time and
-// asked again every 256 scenes (another map made where a freed one was). On the render thread only.
+// asked again every 256 scenes (another map made where a freed one was). On the render thread only. Where the flag
+// cannot tell (an object made to fade in and out has every material flagged so: the vehicles), the glass is what draws
+// with the plain glass's shaders (rfg-glass, rfg-glass-etched: the windows).
 struct GlassEntry {
     const void* materials = nullptr;
     uint32_t num = 0, mask = 0;
     uint32_t clear = 0, translucent = 0;  // every entry (the first 32): clear glass, translucent glass
     int64_t scene = -1000000;
+    bool vehicle = false;  // read as a vehicle's
 };
 std::unordered_map<const uint8_t*, GlassEntry> g_glass;
 int64_t g_glass_scene = 0;
 uint64_t g_glass_reads = 0;  // maps read this scene
-uint64_t g_glass_faders = 0;  // maps all transparent, taken for objects that fade (all along)
+uint64_t g_glass_faders = 0;  // maps all transparent, taken for objects that fade (all along; the vehicles' not counted)
+uint64_t g_glass_vehicle_maps = 0, g_glass_by_shader = 0;  // vehicles' maps read; those and the faders' with glass by shader
 bool g_glass_on = true;      // Mirror.Glass
+std::vector<double> g_vehicle_glass_at;  // Test.VehicleGlassAt
+size_t g_vehicle_glass_next = 0;
+bool g_vehicle_glass = true;  // the vehicles' windows glass (Test.VehicleGlassAt switches them solid and back)
 int g_probe_key = 0;         // Test.ProbeKey
 double g_probe_at = 0;       // Test.ProbeAt
 int g_probe_at_frame = -1;   // Test.ProbeAtFrame
@@ -100,9 +107,11 @@ const char* const kShaderNames[] = {
     "rfg-heat-map", "rfg-orbital", "rfg-mp-nodecal_rimlight", "rfg-nodecal_rimlight", "rfg-blend-std-metal", "rfg-e-metal",
     "rfg-ed-metal", "rfg-brdf-env", "rfg-skin", "rfg-terrainblend"};
 constexpr size_t kShaderNameCount = sizeof(kShaderNames) / sizeof(kShaderNames[0]);
-uint32_t g_shader_handles[kShaderNameCount];
+uint32_t g_shader_handles[kShaderNameCount];  // [0] rfg-glass, [1] rfg-glass-etched: also the faders' glass (glass_of)
+constexpr uint32_t kShaderUnread = 0xFFFFFFFDu;  // an entry whose material was not read (no handle is)
 std::mutex g_glass_shader_mutex;
 std::unordered_map<uint32_t, uint64_t> g_glass_shaders;  // shader handle -> transparent or translucent entries read
+std::unordered_map<uint32_t, uint64_t> g_fader_shaders;  // shader handle -> the vehicles' and the faders' entries read
 
 void lookup_eosglass() {
     if (g_eosglass_looked) return;
@@ -157,10 +166,10 @@ uint32_t transparent_entries(const uint32_t* materials, uint32_t num, uint32_t* 
     }
 }
 
-std::string glass_shaders_described() {
+std::string shaders_described(const std::unordered_map<uint32_t, uint64_t>& counts) {
     std::lock_guard<std::mutex> lock(g_glass_shader_mutex);
     std::string s;
-    for (const auto& [handle, count] : g_glass_shaders) {
+    for (const auto& [handle, count] : counts) {
         const char* name = nullptr;
         for (size_t i = 0; i < kShaderNameCount && !name; ++i)
             if (g_shader_handles[i] == handle) name = kShaderNames[i];
@@ -174,7 +183,8 @@ std::string glass_shaders_described() {
     return s.empty() ? "none" : s;
 }
 
-uint32_t glass_of(const uint8_t* map, uint32_t* clear_out = nullptr, uint32_t* translucent_out = nullptr) {
+// `vehicle`: a vehicle's map (rl_deformable_mesh_instance), every entry flagged transparent however many it has.
+uint32_t glass_of(const uint8_t* map, uint32_t* clear_out = nullptr, uint32_t* translucent_out = nullptr, bool vehicle = false) {
     const uint32_t* materials = nullptr;
     uint32_t num = 0;
     if (clear_out) *clear_out = 0;
@@ -182,7 +192,7 @@ uint32_t glass_of(const uint8_t* map, uint32_t* clear_out = nullptr, uint32_t* t
     if (!g_glass_on || !map || !map_entries(map, &materials, &num) || !materials || !num || num > 4096) return 0;
     if (g_glass.size() > 65536) g_glass.clear();
     GlassEntry& e = g_glass[map];
-    if (e.materials == materials && e.num == num && g_glass_scene - e.scene < 256) {
+    if (e.materials == materials && e.num == num && e.vehicle == vehicle && g_glass_scene - e.scene < 256) {
         if (clear_out) *clear_out = e.clear;
         if (translucent_out) *translucent_out = e.translucent;
         return e.mask;
@@ -190,20 +200,31 @@ uint32_t glass_of(const uint8_t* map, uint32_t* clear_out = nullptr, uint32_t* t
     e.materials = materials;
     e.num = num;
     e.scene = g_glass_scene;
+    e.vehicle = vehicle;
     lookup_eosglass();
-    uint32_t translucent = 0, shaders[31] = {};
+    uint32_t translucent = 0, shaders[31];
+    for (uint32_t& s : shaders) s = kShaderUnread;
     e.mask = transparent_entries(materials, num, &translucent, shaders);
-    if (e.mask | translucent) {
+    // A map whose every entry (three or more) is transparent is an object made to fade in and out (the vehicles' are
+    // all so, whatever their number), not glass all over: its glass is the entries drawing the plain glass's shaders
+    // (the windows), the rest solid.
+    const uint32_t entries = num < 32 ? num : 32;
+    if (vehicle || (entries >= 3 && e.mask == (entries == 32 ? 0xFFFFFFFFu : (1u << entries) - 1u))) {
+        uint32_t panes = 0;
+        std::lock_guard<std::mutex> lock(g_glass_shader_mutex);
+        for (uint32_t i = 0; i < 31; ++i) {
+            if (shaders[i] == kShaderUnread) continue;
+            ++g_fader_shaders[shaders[i]];
+            if (shaders[i] == g_shader_handles[0] || shaders[i] == g_shader_handles[1]) panes |= 1u << i;
+        }
+        e.mask = panes;
+        translucent = 0;
+        ++(vehicle ? g_glass_vehicle_maps : g_glass_faders);
+        if (panes) ++g_glass_by_shader;
+    } else if (e.mask | translucent) {
         std::lock_guard<std::mutex> lock(g_glass_shader_mutex);
         for (uint32_t i = 0; i < 31; ++i)
             if (((e.mask | translucent) >> i) & 1u) ++g_glass_shaders[shaders[i]];
-    }
-    // A map whose every entry (three or more) is transparent is an object made to fade in and out (the vehicles' are
-    // all so), not glass: it stays solid.
-    const uint32_t entries = num < 32 ? num : 32;
-    if (entries >= 3 && e.mask == (entries == 32 ? 0xFFFFFFFFu : (1u << entries) - 1u)) {
-        e.mask = 0;
-        ++g_glass_faders;
     }
     e.clear = e.mask;
     e.translucent = translucent;
@@ -627,9 +648,14 @@ void log_stats(Stats st) {
         double(st.vehicles) / f, double(st.skirts) / f, st.other_classes.describe(f).c_str(),
         st.other_renderables.describe(f).c_str());
     LOG("instances: per scene: %.1f instances draw transparent materials (glass: rays go through those), %.2f material maps "
-        "read for that; %llu maps all transparent taken for objects that fade so far (solid)", double(st.glass) / f,
-        double(st.glass_maps) / f, static_cast<unsigned long long>(g_glass_faders));
-    LOG("instances: the transparent and translucent materials' shaders (material map entries read): %s", glass_shaders_described().c_str());
+        "read for that; so far %llu vehicles' maps and %llu others all transparent (objects that fade) read, their glass "
+        "the entries drawing rfg-glass or rfg-glass-etched (the rest solid) in %llu of them", double(st.glass) / f,
+        double(st.glass_maps) / f, static_cast<unsigned long long>(g_glass_vehicle_maps),
+        static_cast<unsigned long long>(g_glass_faders), static_cast<unsigned long long>(g_glass_by_shader));
+    LOG("instances: the transparent and translucent materials' shaders (material map entries read): %s",
+        shaders_described(g_glass_shaders).c_str());
+    LOG("instances: the vehicles' and the fading objects' materials' shaders (material map entries read): %s",
+        shaders_described(g_fader_shaders).c_str());
     LOG("instances: meshes' materials sent to the core: %llu records (%llu of them before all their textures were there), "
         "%zu meshes waiting for theirs; %llu material map entries read (%llu naming a diffuse map, %llu unreadable)",
         static_cast<unsigned long long>(g_materials_records), static_cast<unsigned long long>(g_materials_partial),
@@ -731,6 +757,7 @@ void on_frame(int) {
 bool install(const Config& cfg) {
     if (!cfg.host_enabled || !cfg.mirror_enabled) return true;
     g_glass_on = cfg.glass;
+    g_vehicle_glass_at = cfg.vehicle_glass_at;
     g_probe_key = cfg.probe_key;
     g_probe_at = cfg.probe_at_s;
     g_probe_at_frame = cfg.probe_at_frame;
@@ -780,6 +807,12 @@ void snapshot(uint8_t* renderer, uint8_t* scene, uint8_t* camera, int64_t frame)
     uint64_t reused = 0, remade = 0, skirts = 0, vehicles = 0, glassy = 0;
     ++g_glass_scene;
     g_glass_reads = 0;
+    if (g_vehicle_glass_next < g_vehicle_glass_at.size() &&
+        session::gameplay_seconds() >= g_vehicle_glass_at[g_vehicle_glass_next]) {
+        ++g_vehicle_glass_next;
+        g_vehicle_glass = !g_vehicle_glass;
+        LOG("instances: the vehicles' windows %s (Test.VehicleGlassAt)", g_vehicle_glass ? "glass again" : "solid, as before");
+    }
     ClassCounts other_classes, other_renderables;
     // A subzone's height mesh is drawn as ~25 chunk instances (m_sub_mesh_index into a chunk table it gets after its
     // geometry is made); the mirror has it whole, as its first submesh when it was made: once a frame is enough.
@@ -942,10 +975,12 @@ void snapshot(uint8_t* renderer, uint8_t* scene, uint8_t* camera, int64_t frame)
                 const uint8_t* subs = rfg::field<uint8_t*>(inst, rfg::off::Compound_subInstances);
                 const int count = rfg::field<int32_t>(inst, rfg::off::Compound_numSubInstances);
                 const size_t subs_bytes = subs && count > 0 ? size_t(count) * rfg::off::SubInstance_size : 0;
-                // the vehicles' materials are all flagged transparent (they fade in and out): never glass
+                // the vehicles' materials are all flagged transparent (they fade in and out): their glass is the
+                // windows' shaders' (glass_of)
                 uint32_t mclear = 0, mtranslucent = 0;
                 uint8_t* const cmap = rfg::field<uint8_t*>(inst, rfg::off::Compound_matMap);
-                const uint32_t glass = cls == g_class.deformable ? 0u : glass_of(cmap, &mclear, &mtranslucent);
+                uint32_t glass = glass_of(cmap, &mclear, &mtranslucent, cls == g_class.deformable);
+                if (cls == g_class.deformable && !g_vehicle_glass) glass = 0;  // (Test.VehicleGlassAt)
                 send_mesh_materials(mesh, cmap, mclear, mtranslucent);
                 const uint32_t key_ids[3] = {mesh, pass, glass};
                 BuildingCache& bc = g_buildings[inst];

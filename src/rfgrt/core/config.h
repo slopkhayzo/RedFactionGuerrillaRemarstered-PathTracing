@@ -169,6 +169,8 @@ struct Config {
     std::vector<double> vanilla_at;  // Test.VanillaAt: Test.VanillaKey pressed at these gameplay seconds (tests)
     std::vector<double> glass_refl_at;  // Test.GlassReflectionsAt: the clear glass's reflections hidden, shown again, ...
                                         // at these gameplay seconds (A/B shots of one view)
+    std::vector<double> vehicle_glass_at;  // Test.VehicleGlassAt: the vehicles' windows solid (as before they were
+                                           // glass), glass again, ... at these gameplay seconds (A/B shots)
     int vanilla_key = 0x7A;       // Test.VanillaKey: the key (F11) that switches between the path tracing and the game's
                                   // own lighting and shadows, for comparing (the core keeps running; 0: none)
     std::wstring input_script;    // scripted mouse and keyboard input (test/input_script.h)
