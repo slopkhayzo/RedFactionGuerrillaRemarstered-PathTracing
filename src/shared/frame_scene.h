@@ -114,6 +114,15 @@ struct SlotHeader {
     // g_commonFragmentConstants.fogColor.
     float fog_distance[4];
     float fog_color[4];
+    // The game's cloud shadows (rl_scene_shadows.cpp buildShadowParamsProjectionTexture, the CLB projector's shader): the
+    // overhead clouds' texture laid straight down and scrolled. At a point p (render-offset space) its alpha at uv =
+    // (p.x cloud_uv[0] + cloud_uv[2], p.z cloud_uv[1] + cloud_uv[3]) (wrapping) shadows saturate(saturate(alpha +
+    // cloud_shadow[1]) cloud_shadow[0]) of the sun. cloud_texture: the core's id of that texture + 1 (mirror/textures.h),
+    // 0 for none (no clouds, GI.CloudShadows 0, or not with the core yet).
+    float cloud_uv[4];
+    float cloud_shadow[2];
+    uint32_t cloud_texture;
+    uint32_t pad5;
     // The dynamic lights with a shadow mask this frame.
     uint32_t light_count;
     uint32_t lights_dropped;  // more lights than masks: the farthest go without

@@ -100,6 +100,12 @@ inline uint32_t Cached_input_states = 0x018D2720;  // Steam 0x018D3720; cached_i
 inline uint32_t Next_cached_input_state = 0x01117A38;  // Steam 0x01118A38; uchar
 inline uint32_t Os_app_active = 0x01118591;  // Steam 0x01119591; bool
 inline uint32_t g_game_options_graphicsSystem = 0x02104508;  // Steam 0x02105508; keen::GraphicsSystem*
+inline uint32_t CloudTexture = 0x0177AD30;  // Steam 0x0177BD30; keen::TextureData*
+inline uint32_t CloudUVScroll = 0x0177AC10;  // Steam 0x0177BC10; keen::float4
+inline uint32_t CloudShadowEnabled = 0x010F947E;  // Steam 0x010FA47E; bool
+inline uint32_t CloudShadowScale = 0x010F9480;  // Steam 0x010FA480; float
+inline uint32_t CloudShadowIntensityScale = 0x010F9484;  // Steam 0x010FA484; float
+inline uint32_t CloudShadowIntensityBias = 0x010F9488;  // Steam 0x010FA488; float
 inline uint32_t Current_scene_renderer = 0x0177AD10;  // Steam 0x0177BD10; rl_scene_renderer*
 inline uint32_t ClassInfo_mesh = 0x01113DB4;  // Steam 0x01114DB4; rl_class_factory_info
 inline uint32_t ClassInfo_meshInstance = 0x01113DFC;  // Steam 0x01114DFC; rl_class_factory_info
@@ -349,6 +355,12 @@ inline constexpr RvaEntry kRvaTable[] = {
     {&rva::Next_cached_input_state, {0x01117A38, 0x01118A38}},
     {&rva::Os_app_active, {0x01118591, 0x01119591}},
     {&rva::g_game_options_graphicsSystem, {0x02104508, 0x02105508}},
+    {&rva::CloudTexture, {0x0177AD30, 0x0177BD30}},
+    {&rva::CloudUVScroll, {0x0177AC10, 0x0177BC10}},
+    {&rva::CloudShadowEnabled, {0x010F947E, 0x010FA47E}},
+    {&rva::CloudShadowScale, {0x010F9480, 0x010FA480}},
+    {&rva::CloudShadowIntensityScale, {0x010F9484, 0x010FA484}},
+    {&rva::CloudShadowIntensityBias, {0x010F9488, 0x010FA488}},
     {&rva::Current_scene_renderer, {0x0177AD10, 0x0177BD10}},
     {&rva::ClassInfo_mesh, {0x01113DB4, 0x01114DB4}},
     {&rva::ClassInfo_meshInstance, {0x01113DFC, 0x01114DFC}},

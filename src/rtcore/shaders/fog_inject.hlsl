@@ -94,7 +94,8 @@ void main(uint3 id : SV_DispatchThreadID) {
         float2 v = 0.0;
         if (sun.w != 0.0) {
             const float rr = sqrt(fixed_unit(h3 + i * kR2.x)) * sky_probe.w, ph = 6.2831853 * fixed_unit(h4 + i * kR2.y);
-            v.x = light_through(p, normalize(l + ta * (rr * cos(ph)) + tb * (rr * sin(ph))));  // (smooth through glass)
+            // (smooth through glass; the clouds' shadow, GI.CloudShadows)
+            v.x = light_through(p, normalize(l + ta * (rr * cos(ph)) + tb * (rr * sin(ph)))) * cloud_vis(p);
         }
         const float3 up = cosine_dir(float3(0, 1, 0), fixed_unit(h5 + i * kR2.x), fixed_unit(h6 + i * kR2.y));
         v.y = open_toward(p, up, kSkyRay) ? 1.0 : 0.0;

@@ -22,6 +22,11 @@ bool enabled();
 // The core's id for a game texture handle (rl_texture_desc's): the texture is copied and sent at a later seam. kNone
 // for no texture, textures off, or past the table's end. Any thread.
 uint32_t id_of(uint32_t handle);
+// The same for a game texture known by its device object (keen::TextureData*, as rl_shadow_system::m_pCloudTexture holds
+// the cloud shadows' texture) rather than its handle; and that texture's full size (false until it has a view). Any
+// thread.
+uint32_t id_of_data(const void* texture_data);
+bool data_size(const void* texture_data, uint32_t* width, uint32_t* height);
 // Where a texture id stands: kSent once the core has it (a material naming it may follow), kFailed for one that will never
 // come (kNone included). Any thread.
 State state(uint32_t id);

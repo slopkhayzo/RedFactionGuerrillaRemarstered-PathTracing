@@ -328,6 +328,10 @@ struct GiConstants {
     // each traces from the frame's pixel under that point
     float upscale[4];
     float fog4[4];  // the volumetric fog: x the rays from each froxel a frame (Fog.Rays), y 1 with Fog.Filter
+    // the game's cloud shadows (frame_scene.h cloud_*): xy the scale from a point's x and z to the cloud texture's uv,
+    // zw its offset; then the shadow's scale and bias, and the texture's id + 1 (its bits; 0 none)
+    float cloud[4];
+    float cloud2[4];
 };
 static_assert(sizeof(GiConstants) <= 512, "a 512-byte slot a ring slot");
 
@@ -911,6 +915,7 @@ int run(const RunParams& p) {
     int fogOut = 0;
     bool fogHistory = false;
     uint64_t fogFrames = 0;
+    uint64_t cloudFrames = 0;  // frames with the game's cloud shadows on the GI's, the fog's and the glass's sunlight
     float prevView[16] = {}, prevProj[16] = {}, prevOffset[3] = {}, prevRange = 1.0f;
     int64_t n = 0;               // the last frame taken (queued, or its scene skipped)
     int64_t sig = 0;             // the last frame queued: fence B reaches it when the GPU has run it
@@ -1834,6 +1839,17 @@ int run(const RunParams& p) {
                         g.fog[2] = h->fog_distance[3];
                         g.fog[3] = fogSet ? b->fog_near : 0.0f;  // Fog.Near: the volumetric fog's (the game's keeps its start)
                         g.glass[0] = b->refl_glass_f0;
+                        {  // the game's cloud shadows: on the GI's hits', the fog's and the glass's sunlight (the direct
+                           // sunlight gets them from the game's ClbTexture, into which the sun shadow is multiplied)
+                            const uint32_t tex = h->cloud_texture;
+                            const uint32_t id = tex != 0 && scene.texture_ready(tex - 1) ? tex : 0u;
+                            memcpy(g.cloud, h->cloud_uv, sizeof(g.cloud));
+                            g.cloud2[0] = h->cloud_shadow[0];
+                            g.cloud2[1] = h->cloud_shadow[1];
+                            memcpy(&g.cloud2[2], &id, sizeof(id));
+                            g.cloud2[3] = 0.0f;
+                            if (id) ++cloudFrames;
+                        }
                         g.probe[0] = b->probe_x > 0.0f && b->probe_x < 1.0f ? b->probe_x : 0.5f;
                         g.probe[1] = b->probe_y > 0.0f && b->probe_y < 1.0f ? b->probe_y : 0.5f;
                         g.glass[1] = set.glass_refl && b->refl_glass ? 1.0f : 0.0f;
@@ -2357,6 +2373,11 @@ int run(const RunParams& p) {
                          lastGi.fog_color[0], lastGi.fog_color[1], lastGi.fog_color[2], set.fog_x, set.fog_y, kFogSlices, lastGi.fog2[2]);
                     fogFrames = 0;
                 }
+                logf("clouds: the game's cloud shadows on the sunlight of the GI's hits, the fog and the glass in %llu frames "
+                     "(GI.CloudShadows); the last: uv per metre %.6f (x) %.6f (z), scroll %.4f, shadow scale %g, bias %g",
+                     static_cast<unsigned long long>(cloudFrames), lastGi.cloud[0], lastGi.cloud[1], lastGi.cloud[3],
+                     lastGi.cloud2[0], lastGi.cloud2[1]);
+                cloudFrames = 0;
                 if (tlas.stats.frames)
                     logf("TLAS glass (rays go through transparent materials): per frame %.1f instances all of it (non-opaque "
                          "panes; %.1f of them out of the rays' mask: more than 23 geometries), %.1f with some (non-opaque), %.1f "

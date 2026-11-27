@@ -41,6 +41,8 @@ public:
     // in `materials` (bit i: material map entry i); *geometries: how many it has.
     uint32_t material_geometries(uint32_t mesh_id, uint32_t submesh, uint32_t materials, uint32_t* geometries) const;
     // A mesh's glass by material map entry (kMeshMaterials: bit i entry i): false if the plugin sent none (or none there)
+    // A texture id the core has opened (its table entry holds it).
+    bool texture_ready(uint32_t id) const { return id < texture_ok_.size() && texture_ok_[id] != 0; }
     bool mesh_glass(uint32_t mesh_id, uint32_t* clear, uint32_t* translucent) const {
         auto it = mesh_glass_.find(mesh_id);
         if (it == mesh_glass_.end()) return false;

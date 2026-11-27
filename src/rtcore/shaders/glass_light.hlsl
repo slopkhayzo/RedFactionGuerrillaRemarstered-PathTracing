@@ -99,7 +99,7 @@ void main(uint3 id : SV_DispatchThreadID) {
                 const float3 d = normalize(l + ta * (rr * cos(ph)) + tb * (rr * sin(ph)));
                 lit += 0.5 * light_through(hp + ns * offset, d);
             }
-            vis = lit;
+            vis = lit * cloud_vis(hp);  // (the clouds' shadow, GI.CloudShadows)
             cosine = abs(c);
         }
         const float3 o = hp + n * offset;

@@ -23,8 +23,10 @@ using rfgrt_scene::kMaxTextures;
 std::atomic<bool> g_enabled{false};
 std::mutex g_mutex;
 std::unordered_map<uint32_t, uint32_t> g_ids;  // game texture handle -> the core's id
+std::unordered_map<const void*, uint32_t> g_data_ids;  // game texture object (keen::TextureData*) -> the core's id
 struct Ask {
     uint32_t handle, id, tries;
+    const void* data;  // the texture's object, for one asked for by it (handle 0)
 };
 std::vector<Ask> g_asked;  // to copy at a seam, in order
 uint32_t g_next = 0;
@@ -56,6 +58,16 @@ bool dev_view(uint32_t handle, ID3D11ShaderResourceView** out) {
         rfg::fn<void**(__cdecl*)(void**, uint32_t)>(rfg::rva::get_dev_texture)(&tex, handle);
         if (!tex) return false;
         *out = *reinterpret_cast<ID3D11ShaderResourceView**>(static_cast<uint8_t*>(tex) + rfg::off::TextureData_pShaderView);
+        return *out != nullptr;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+// The same from the texture's object itself.
+bool data_view(const void* data, ID3D11ShaderResourceView** out) {
+    __try {
+        *out = *reinterpret_cast<ID3D11ShaderResourceView* const*>(static_cast<const uint8_t*>(data) + rfg::off::TextureData_pShaderView);
         return *out != nullptr;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
@@ -105,9 +117,9 @@ void fill_texture(uint8_t* dst, void* ctx) {
 enum class Copy { Done, NoView, Unusable, Failed };
 
 // One texture: its mips from kMaxSize down into a shared copy, recorded on `ctx`, its handle duplicated into the core.
-Copy copy_one(ID3D11Device* dev, ID3D11DeviceContext* ctx, uint32_t handle, uint32_t id, int64_t frame) {
+Copy copy_one(ID3D11Device* dev, ID3D11DeviceContext* ctx, uint32_t handle, uint32_t id, int64_t frame, const void* data) {
     ID3D11ShaderResourceView* view = nullptr;
-    if (!dev_view(handle, &view)) return Copy::NoView;
+    if (data ? !data_view(data, &view) : !dev_view(handle, &view)) return Copy::NoView;
     D3D11_SHADER_RESOURCE_VIEW_DESC vd{};
     view->GetDesc(&vd);
     ID3D11Resource* res = nullptr;
@@ -227,8 +239,43 @@ uint32_t id_of(uint32_t handle) {
     const uint32_t id = g_next++;
     g_ids[handle] = id;
     g_state[id] = kPending;
-    g_asked.push_back(Ask{handle, id, 0});
+    g_asked.push_back(Ask{handle, id, 0, nullptr});
     return id;
+}
+
+uint32_t id_of_data(const void* data) {
+    if (!data || !g_enabled.load()) return kNone;
+    std::lock_guard<std::mutex> lock(g_mutex);
+    auto it = g_data_ids.find(data);
+    if (it != g_data_ids.end()) return it->second;
+    if (g_next >= kMaxTextures) {
+        ++g_over;
+        return g_data_ids[data] = kNone;
+    }
+    const uint32_t id = g_next++;
+    g_data_ids[data] = id;
+    g_state[id] = kPending;
+    g_asked.push_back(Ask{0, id, 0, data});
+    return id;
+}
+
+bool data_size(const void* data, uint32_t* width, uint32_t* height) {
+    ID3D11ShaderResourceView* view = nullptr;
+    if (!data || !data_view(data, &view)) return false;
+    ID3D11Resource* res = nullptr;
+    view->GetResource(&res);
+    ID3D11Texture2D* tex = nullptr;
+    if (res) {
+        res->QueryInterface(IID_PPV_ARGS(&tex));
+        res->Release();
+    }
+    if (!tex) return false;
+    D3D11_TEXTURE2D_DESC d{};
+    tex->GetDesc(&d);
+    tex->Release();
+    *width = d.Width;
+    *height = d.Height;
+    return d.Width && d.Height;
 }
 
 State state(uint32_t id) { return id < kMaxTextures ? State(g_state[id].load()) : kFailed; }
@@ -277,11 +324,11 @@ void on_seam(ID3D11Device* dev, ID3D11DeviceContext* ctx, int64_t frame, int64_t
     }
     std::vector<Ask> again;
     for (const Ask& a : batch) {
-        switch (copy_one(dev, ctx, a.handle, a.id, frame)) {
+        switch (copy_one(dev, ctx, a.handle, a.id, frame, a.data)) {
             case Copy::Done: break;
             case Copy::NoView:
                 if (a.tries + 1 < kViewTries) {  // not streamed in yet: later
-                    again.push_back(Ask{a.handle, a.id, a.tries + 1});
+                    again.push_back(Ask{a.handle, a.id, a.tries + 1, a.data});
                     ++g_retries;
                 } else {
                     g_state[a.id] = kFailed;
@@ -313,6 +360,7 @@ void on_seam(ID3D11Device* dev, ID3D11DeviceContext* ctx, int64_t frame, int64_t
 void on_core_stop() {
     std::lock_guard<std::mutex> lock(g_mutex);
     g_ids.clear();
+    g_data_ids.clear();
     g_asked.clear();
     g_next = 0;
     for (auto& s : g_state) s.store(kUnknown);

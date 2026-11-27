@@ -27,7 +27,7 @@
 namespace rfgrt_ipc {
 
 constexpr uint32_t kMagic = 0x54524652;  // "RFRT"
-constexpr uint32_t kVersion = 29;
+constexpr uint32_t kVersion = 30;
 constexpr uint32_t kMaxLightMasks = 16;  // shadow masks of dynamic lights a frame
 
 enum HostState : int32_t {

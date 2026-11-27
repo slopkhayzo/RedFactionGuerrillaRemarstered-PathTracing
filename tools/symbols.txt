@@ -83,6 +83,14 @@ field rl_hdr_state::m_lum_offset as HdrState_lumOffset
 field rl_hdr_state::m_eye_adaption_base as HdrState_eyeAdaptionBase
 field rl_hdr_state::m_eye_adaption_amount as HdrState_eyeAdaptionAmount
 field rl_hdr_state::m_bloom_amount as HdrState_bloomAmount
+# the cloud shadows (rl_scene_shadows.cpp: the overhead clouds' texture laid straight down, scrolled), for the sunlight
+# the GI's hits, the fog and the glass get (GI.CloudShadows)
+var rl_shadow_system::m_pCloudTexture as CloudTexture
+var rl_shadow_system::m_cloudUVScroll as CloudUVScroll
+var g_cloudShadowEnabled as CloudShadowEnabled
+var g_cloudShadowScale as CloudShadowScale
+var g_cloudShadowIntensityScale as CloudShadowIntensityScale
+var g_cloudShadowIntensityBias as CloudShadowIntensityBias
 # the particles the game draws over everything (always on top: the camera's wind dust), drawn with the sky while path
 # tracing (Particles.AlwaysOnTopWithSky, render/sky_particles.h)
 fn rl_particle_renderer::render @00129EC0

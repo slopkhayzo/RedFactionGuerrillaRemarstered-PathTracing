@@ -97,6 +97,8 @@ struct Config {
     std::vector<double> gi_terrain_albedo;  // GI.TerrainAlbedo: r, g, b the rays give the terrain where nothing better is
                                             // known (default 0.032, 0.010, 0.002: the soil as the game draws it)
     bool gi_window_tint = true;   // the clear glass tints the sun's light through it, texel by texel (GI.WindowTint)
+    bool gi_cloud_shadows = true; // the game's cloud shadows on the sunlight of the GI's hits, the fog and the glass (the
+                                  // direct sunlight has them from the game's ClbTexture either way)
     double gi_rim_light = 0.0;    // the characters' cloth's rim light (a glow along their edges turned from the sun,
                                   // patch/rim_light.h) where the path tracer lights them: 0 none, 1 the game's
     bool gi_frosted_glass = true; // the patterned glass (rfg-eosglass) diffuses the light through it: no sunlight through

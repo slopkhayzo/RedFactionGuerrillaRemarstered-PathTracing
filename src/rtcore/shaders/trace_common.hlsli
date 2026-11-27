@@ -67,6 +67,9 @@ cbuffer Frame : register(b0) {
                           // is smoothed across the screen before it is summed (Fog.Filter), z 1 when it is written in front
                           // of the clear glass too (fog_apply.hlsl; the glass's reflections are then left unfaded), w 1
                           // when the froxels' points behind the scene's surfaces are left out (Fog.Walls, fog_inject.hlsl)
+    float4 cloud;         // the game's cloud shadows (frame_scene.h): xy the scale from a point's x and z to the cloud
+                          // texture's uv, zw its offset (the scroll)
+    float4 cloud2;        // x, y: the shadow's scale and bias; z: the cloud texture's id + 1 (asuint; 0 none)
 };
 
 static const float PI = 3.14159265;
@@ -314,12 +317,23 @@ float3 surface_radiance(Surface s, float3 e) {
     return s.albedo / PI * lerp(e, float3(4.0, 4.0, 4.0), saturate(s.glow));
 }
 
-// The sun's irradiance at a surface point (a shadow ray toward it).
+// The share of the sun the game's cloud shadows leave at p (GI.CloudShadows; frame_scene.h): their texture's alpha laid
+// straight down, shadowing saturate(saturate(alpha + bias) scale) as the game's CLB projector does; 1 without them. For
+// the sunlight the GI's hits, the fog and the glass get: the direct sunlight has them from the game's ClbTexture.
+float cloud_vis(float3 p) {
+    const uint tex = asuint(cloud2.z);
+    if (tex == 0u || tex > kMaterialTextures) return 1.0;
+    const float2 uv = float2(p.x * cloud.x + cloud.z, p.z * cloud.y + cloud.w);
+    const float a = material_textures[NonUniformResourceIndex(tex - 1u)].SampleLevel(material_sampler, uv, 0.0).a;
+    return 1.0 - saturate(saturate(a + cloud2.y) * cloud2.x);
+}
+
+// The sun's irradiance at a surface point (a shadow ray toward it, the clouds' shadow).
 float3 sun_at(float3 hp, float3 nh) {
     if (sun.w == 0.0) return 0.0;
     const float3 to_sun = normalize(sun.xyz);
     const float c = dot(nh, to_sun);
-    return (c > 0.0 && lit_toward(hp, to_sun)) ? sun_color.rgb * c : 0.0;
+    return (c > 0.0 && lit_toward(hp, to_sun)) ? sun_color.rgb * (c * cloud_vis(hp)) : 0.0;
 }
 
 // Frosted glass (RTQ_FROSTED): whether a hit is on a translucent pane (its instance table entry's bits 8-31).
@@ -608,7 +622,9 @@ float bounce_scale(float3 hp, float3 dir, float t, uint instance, uint geometry)
     const float mean = hit_mean(instance, geometry);
     const float sunlit = sun_bounce_scale(mean), shaded = shade_bounce_scale(mean);
     if (sunlit == shaded) return sunlit;
-    return sun.w != 0.0 && lit_toward(hp - dir * (0.02 + 0.002 * t), normalize(sun.xyz)) ? sunlit : shaded;
+    // (under a cloud's shadow the drawn colour is in shade already: the scale goes the same way)
+    return sun.w != 0.0 && lit_toward(hp - dir * (0.02 + 0.002 * t), normalize(sun.xyz)) ? lerp(shaded, sunlit, cloud_vis(hp))
+                                                                                         : shaded;
 }
 
 float3 shade_hit(float3 origin, float3 dir, float t, uint instance, uint geometry, uint primitive, float2 bary, float3x4 to_world,
