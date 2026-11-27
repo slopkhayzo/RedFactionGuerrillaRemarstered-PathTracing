@@ -31,6 +31,9 @@ constexpr char kProjectId[] = "8d2f5b61-3c47-4e9a-b0d4-6a91c2e7f3b8";
 constexpr int kInfoLines = 200, kProblemLines = 100, kProblemEvery = 1000, kFrameGenLines = 300, kFrameGenEvery = 500;
 // Without inputs for this many presents (loading screens, the main menu): DLSS-G off until they come again.
 constexpr unsigned kIdlePresents = 30;
+// Paused this many presents when its inputs change size (as after a menu), then on again for the new size: by then its
+// last generated frames are done (each present waits for DLSS-G's work on the presenting queue).
+constexpr unsigned kResizePresents = 6;
 
 struct Api {
     HMODULE module = nullptr;
@@ -47,6 +50,7 @@ struct Api {
     PFun_slReflexSetOptions* reflex_set_options{};
     PFun_slReflexSleep* reflex_sleep{};
     PFun_slPCLSetMarker* pcl_set_marker{};
+    PFun_slFreeResources* free_resources{};  // (optional)
 };
 
 struct State {
@@ -64,12 +68,15 @@ struct State {
     uint64_t presents = 0, inputs = 0, input_failures = 0;
     double sleep_ms_sum = 0.0, sleep_ms_max = 0.0;
     uint64_t sleeps = 0;
-    // DLSS-G allocates for the size of the frame and of the depth and motion it is turned on with (no dynamic resolution
-    // here): those (0: not known then, the first tagged frame's taken), and the latest inputs'
-    unsigned on_w = 0, on_h = 0, on_depth_w = 0, on_depth_h = 0;
-    unsigned seen_w = 0, seen_h = 0, seen_depth_w = 0, seen_depth_h = 0;
-    bool reset_next = false;  // DLSS-G back on for a new size: its first frame without history
-    uint64_t resizes = 0;     // times it went off and on again for a new size
+    // The size of the frame and of the depth and motion DLSS-G's buffers were made for (kept while it is paused; 0: none
+    // or not known yet, the next inputs' taken), this frame's inputs' (begin_frame; 0: none), the latest inputs' depth and
+    // motion (for the log), and a pause for a new size
+    unsigned alloc_w = 0, alloc_h = 0, alloc_depth_w = 0, alloc_depth_h = 0;
+    unsigned cur_w = 0, cur_h = 0, cur_depth_w = 0, cur_depth_h = 0;
+    unsigned seen_depth_w = 0, seen_depth_h = 0;
+    unsigned resize_pause = 0;  // presents to stay paused for its inputs' new size
+    bool reset_next = false;    // DLSS-G back on: its first frame without history
+    uint64_t resizes = 0, frees = 0;  // times it was paused for a new size; its buffers freed for one
     std::atomic<int> info_lines{0}, problem_lines{0}, framegen_lines{0};
 } s;
 
@@ -178,32 +185,44 @@ void apply_reflex() {
 }
 
 void apply_mode() {
-    const bool on = s.wanted.load() && s.supported && s.presents_without_inputs < kIdlePresents;
+    const bool on = s.wanted.load() && s.supported && s.presents_without_inputs < kIdlePresents && s.resize_pause == 0;
+    if (s.resize_pause) --s.resize_pause;
     if (s.applied_once && on == s.applied) return;
     sl::DLSSGOptions options{};
     options.mode = on ? sl::DLSSGMode::eOn : sl::DLSSGMode::eOff;
     options.numFramesToGenerate = 1;
     // full-screen menus over the frame (the UI layer covers the screen): DLSS-G pauses itself
     options.flags = sl::DLSSGFlags::eRetainResourcesWhenOff | sl::DLSSGFlags::eEnableFullscreenMenuDetection;
-    // the sizes its inputs have had (it allocates for them now; unknown yet: for the first tagged frame's)
-    if (on && s.seen_w && s.seen_depth_w) {
-        options.colorWidth = s.seen_w;
-        options.colorHeight = s.seen_h;
-        options.mvecDepthWidth = s.seen_depth_w;
-        options.mvecDepthHeight = s.seen_depth_h;
+    // Going on with buffers it kept for another size (paused there: a menu at another size, frame generation off a while,
+    // or a pause for its inputs' new size): those freed first, while it is still off and idle, as NVIDIA's guide frees
+    // what it retains (off, then slFreeResources), so it makes them anew for these inputs. Never while it runs (freed
+    // then, 11-27, its presents stalled 0.5 to 1 s and the machine froze).
+    if (on && s.alloc_w && s.cur_w && s.api.free_resources &&
+        (s.cur_w != s.alloc_w || s.cur_h != s.alloc_h || s.cur_depth_w != s.alloc_depth_w || s.cur_depth_h != s.alloc_depth_h)) {
+        const sl::Result fr = s.api.free_resources(sl::kFeatureDLSS_G, sl::ViewportHandle(0u));
+        LOG("frame generation: DLSS-G's buffers for %ux%u (the depth and motion %ux%u) freed before it goes on for %ux%u "
+            "(%ux%u) (result %d)",
+            s.alloc_w, s.alloc_h, s.alloc_depth_w, s.alloc_depth_h, s.cur_w, s.cur_h, s.cur_depth_w, s.cur_depth_h, int(fr));
+        s.alloc_w = s.alloc_h = s.alloc_depth_w = s.alloc_depth_h = 0;
+        ++s.frees;
     }
     const sl::Result r = s.api.dlssg_set_options(sl::ViewportHandle(0u), options);
     if (r != sl::Result::eOk) LOG("frame generation: slDLSSGSetOptions(%s) failed (result %d)", on ? "on" : "off", int(r));
-    if (on) {
-        s.on_w = s.seen_w;
-        s.on_h = s.seen_h;
-        s.on_depth_w = s.seen_depth_w;
-        s.on_depth_h = s.seen_depth_h;
+    if (on) {  // its buffers made for these inputs (unknown: the next inputs'); its first frame without history
+        if (s.cur_w && !s.alloc_w) {
+            s.alloc_w = s.cur_w;
+            s.alloc_h = s.cur_h;
+            s.alloc_depth_w = s.cur_depth_w;
+            s.alloc_depth_h = s.cur_depth_h;
+        }
+        s.reset_next = true;
     }
     s.applied = on;
     s.applied_once = true;
     LOG("frame generation: DLSS-G %s", on ? "on (one generated frame between each two)"
-                                       : s.wanted.load() ? "paused (no inputs: a loading screen or a menu)" : "off");
+                                       : !s.wanted.load()                         ? "off"
+                                       : s.presents_without_inputs >= kIdlePresents ? "paused (no inputs: a loading screen or a menu)"
+                                                                                  : "paused for its inputs' new size");
     if (on && !s.rtss_warned && GetModuleHandleW(L"RTSSHooks64.dll")) {
         s.rtss_warned = true;
         LOG("frame generation: RivaTuner Statistics Server is hooking the game: its on-screen display, drawn into every "
@@ -296,6 +315,7 @@ bool load(ID3D12Device* device) {
     sl::AdapterInfo adapter{};
     adapter.deviceLUID = reinterpret_cast<uint8_t*>(&luid);
     adapter.deviceLUIDSizeInBytes = sizeof(luid);
+    s.api.free_resources = reinterpret_cast<PFun_slFreeResources*>(GetProcAddress(s.api.module, "slFreeResources"));
     r = s.api.is_supported(sl::kFeatureDLSS_G, adapter);
     s.supported = r == sl::Result::eOk && feature_function(sl::kFeatureDLSS_G, "slDLSSGSetOptions", s.api.dlssg_set_options) &&
                   feature_function(sl::kFeatureDLSS_G, "slDLSSGGetState", s.api.dlssg_get_state);
@@ -323,9 +343,14 @@ bool enabled() { return s.loaded && s.supported && s.wanted.load(); }
 bool generating() { return s.loaded && s.applied; }
 const char* unavailable() { return s.unavailable.c_str(); }
 
-void begin_frame(bool has_inputs) {
+void begin_frame(bool has_inputs, unsigned width, unsigned height, unsigned depth_width, unsigned depth_height) {
     if (!s.loaded) return;
     s.presents_without_inputs = has_inputs ? 0 : (s.presents_without_inputs < 1000 ? s.presents_without_inputs + 1 : 1000);
+    const bool sized = has_inputs && width && height;
+    s.cur_w = sized ? width : 0;
+    s.cur_h = sized ? height : 0;
+    s.cur_depth_w = sized ? (depth_width ? depth_width : width) : 0;
+    s.cur_depth_h = sized ? (depth_height ? depth_height : height) : 0;
     if (s.supported) apply_mode();
     if (!s.frame) start_frame();  // the first frame through the presenter
     if (s.frame) {
@@ -348,30 +373,25 @@ bool set_inputs(ID3D12GraphicsCommandList* list, const Camera& c, const Inputs& 
     const unsigned depth_width = in.depth_width ? in.depth_width : in.width;
     const unsigned depth_height = in.depth_height ? in.depth_height : in.height;
     // A new size of the frame, or of the depth and motion (the game's DLSS mode changed while playing: its scene drawn at
-    // another size), while DLSS-G runs: it would go on with what it allocated for the old size, its frames made with
-    // the motion read wrongly until it was turned off and on again (a level's load). As NVIDIA's guide asks (DLSS-G off
-    // when the resolution changes): off now with its resources freed, on again at the next present for this size.
-    s.seen_w = in.width;
-    s.seen_h = in.height;
+    // another size), while DLSS-G runs: it would go on with what it made for the old size, reading the motion wrongly
+    // until it was paused and on again (a menu, a level's load). NVIDIA's guide: DLSS-G off when the resolution changes.
+    // So: paused for a few presents, as a menu pauses it, then on again, its buffers for the old size freed while it is off
+    // (apply_mode), its first frame without history. This frame still goes as tagged.
     s.seen_depth_w = depth_width;
     s.seen_depth_h = depth_height;
-    if (s.applied && !s.on_w) {  // turned on before any inputs: it takes these
-        s.on_w = in.width;
-        s.on_h = in.height;
-        s.on_depth_w = depth_width;
-        s.on_depth_h = depth_height;
-    } else if (s.applied && (in.width != s.on_w || in.height != s.on_h || depth_width != s.on_depth_w || depth_height != s.on_depth_h)) {
-        sl::DLSSGOptions off{};
-        off.mode = sl::DLSSGMode::eOff;
-        off.flags = sl::DLSSGFlags::eEnableFullscreenMenuDetection;  // (not retained: freed)
-        const sl::Result r = s.api.dlssg_set_options(sl::ViewportHandle(0u), off);
-        LOG("frame generation: its inputs' size changed (the frame %ux%u, the depth and motion %ux%u; they were %ux%u and "
-            "%ux%u): DLSS-G off, its resources freed (result %d), on again at the next present for the new size",
-            in.width, in.height, depth_width, depth_height, s.on_w, s.on_h, s.on_depth_w, s.on_depth_h, int(r));
-        s.applied = false;
-        s.reset_next = true;
+    if (s.applied && !s.alloc_w) {  // on without knowing its inputs' size: these
+        s.alloc_w = in.width;
+        s.alloc_h = in.height;
+        s.alloc_depth_w = depth_width;
+        s.alloc_depth_h = depth_height;
+    } else if (s.applied && !s.resize_pause &&
+               (in.width != s.alloc_w || in.height != s.alloc_h || depth_width != s.alloc_depth_w || depth_height != s.alloc_depth_h)) {
+        LOG("frame generation: its inputs' size changed (the frame %ux%u, the depth and motion %ux%u; it runs for %ux%u and "
+            "%ux%u): DLSS-G paused for %u presents, then on again for the new size",
+            in.width, in.height, depth_width, depth_height, s.alloc_w, s.alloc_h, s.alloc_depth_w, s.alloc_depth_h,
+            kResizePresents);
+        s.resize_pause = kResizePresents;
         ++s.resizes;
-        return false;
     }
     k.jitterOffset = sl::float2(0.0f, 0.0f);
     k.mvecScale = sl::float2(1.0f / float(depth_width), 1.0f / float(depth_height));
@@ -448,12 +468,12 @@ void report(double seconds) {
                      static_cast<unsigned long long>(g.estimatedVRAMUsageInBytes >> 20));
     }
     LOG("frame generation over %.1f s: %llu presents through Streamline, %llu with the inputs (%llu refused); Reflex slept "
-        "%.2f ms avg / %.1f max a frame; DLSS-G %s (%s); the depth and motion %ux%u, off and on again for a new size %llu "
-        "times so far",
+        "%.2f ms avg / %.1f max a frame; DLSS-G %s (%s); the depth and motion %ux%u, paused for a new size %llu times so "
+        "far, its buffers freed %llu times",
         seconds, static_cast<unsigned long long>(s.presents), static_cast<unsigned long long>(s.inputs),
         static_cast<unsigned long long>(s.input_failures), s.sleeps ? s.sleep_ms_sum / double(s.sleeps) : 0.0,
         s.sleep_ms_max, s.applied ? "on" : "off", state, s.seen_depth_w, s.seen_depth_h,
-        static_cast<unsigned long long>(s.resizes));
+        static_cast<unsigned long long>(s.resizes), static_cast<unsigned long long>(s.frees));
     s.presents = s.inputs = s.input_failures = s.sleeps = 0;
     s.sleep_ms_sum = s.sleep_ms_max = 0.0;
 }
@@ -483,7 +503,7 @@ void set_wanted(bool) {}
 bool enabled() { return false; }
 bool generating() { return false; }
 const char* unavailable() { return "this build has no Streamline SDK (tools/fetch_streamline.ps1)"; }
-void begin_frame(bool) {}
+void begin_frame(bool, unsigned, unsigned, unsigned, unsigned) {}
 bool set_inputs(ID3D12GraphicsCommandList*, const Camera&, const Inputs&) { return false; }
 void before_present() {}
 void after_present() {}

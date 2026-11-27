@@ -919,9 +919,9 @@ bool present_ours(IDXGISwapChain* game, UINT sync_interval, HRESULT& result) {
     bool inputs = false;
     if (s.streamline) {
         const bool have = s.scene_for == s.frames;
-        framegen::begin_frame(have);
         const UINT depth_width = s.depth_width[slot] ? s.depth_width[slot] : desc.Width;
         const UINT depth_height = s.depth_height[slot] ? s.depth_height[slot] : desc.Height;
+        framegen::begin_frame(have, desc.Width, desc.Height, depth_width, depth_height);
         if (have && framegen::enabled() && ensure_passes(desc.Width, desc.Height, format, depth_width, depth_height)) {
             ID3D12Resource* hudless12 = s.hudless12[slot].Get();
             ID3D12Resource* depth12 = s.depth12[slot].Get();
