@@ -596,9 +596,9 @@ bool present_frame() {
     bool inputs = false;
     if (s.streamline) {
         const bool have = b.has_inputs != 0 && s.hudless[slot] && s.depth[slot];
+        framegen::begin_frame(have);
         const UINT depth_width = b.slots[slot].depth_width ? b.slots[slot].depth_width : width;
         const UINT depth_height = b.slots[slot].depth_height ? b.slots[slot].depth_height : height;
-        framegen::begin_frame(have, width, height, depth_width, depth_height);
         if (have && framegen::enabled() && ensure_passes(width, height, ours, depth_width, depth_height)) {
             ID3D12Resource* hudless = s.hudless[slot].Get();
             ID3D12Resource* depth = s.depth[slot].Get();

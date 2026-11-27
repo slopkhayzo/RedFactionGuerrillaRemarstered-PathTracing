@@ -333,24 +333,6 @@ void on_frame(int state) {
         rfg::fn<void(__cdecl*)(uint32_t)>(rfg::rva::game_clock_freeze_ingame_time)(1);
         LOG("automation: the game clock set to %02u:00 and held there", static_cast<unsigned>(hour));
     }
-    // Test.DlssCycle: the next DLSS mode every so many gameplay seconds, as a game's DLSS setting changes it while playing
-    // (the core switches once the frames it queued are done; its log says each mode's render size)
-    static int dlss_step = 0;
-    if (g_cfg.test_dlss_cycle_s > 0 && state == GS_GAMEPLAY && gameplay_s >= double(g_cfg.test_dlss_cycle_s) * (dlss_step + 1)) {
-        ++dlss_step;
-        const int mode = dlss_step % 6;  // 1 2 3 4 5 0 1 2 ...
-        rtlink::core_link().set_dlss_mode(mode);
-        LOG("automation: DLSS mode %d at %.1f s of gameplay (Test.DlssCycle)", mode, gameplay_s);
-    }
-    // Test.FrameGenerationCycle: frame generation switched every so many gameplay seconds, as a game's setting does while
-    // playing (the presenter takes over the game's presents, then gives them back)
-    static int fg_step = 0;
-    if (g_cfg.test_fg_cycle_s > 0 && state == GS_GAMEPLAY && gameplay_s >= double(g_cfg.test_fg_cycle_s) * (fg_step + 1)) {
-        ++fg_step;
-        const bool on = fg_step % 2 == 0;  // (it starts as the settings say: the first switch turns it off)
-        presenter::set_wanted(on);
-        LOG("automation: frame generation %s at %.1f s of gameplay (Test.FrameGenerationCycle)", on ? "on" : "off", gameplay_s);
-    }
     if (g_next_shot < g_cfg.shots_at.size() && state == GS_GAMEPLAY && gameplay_s >= g_cfg.shots_at[g_next_shot]) {
         wchar_t name[64];
         swprintf(name, 64, L"\\shot_%03d.png", int(g_cfg.shots_at[g_next_shot] + 0.5));

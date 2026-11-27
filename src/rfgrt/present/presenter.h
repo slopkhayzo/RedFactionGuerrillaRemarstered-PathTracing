@@ -14,7 +14,7 @@ struct Config;
 
 namespace presenter {
 
-// At start-up: the Present hook. On OpenRFG64 VOM's seam always (its FRAME GENERATION row switches while playing); in
+// At start-up: the Present hook. On OpenRFG64 VOM's seam always (its FRAME GENERATION row switches at the main menu); in
 // the plugins when the presenter is wanted at start (FrameGeneration.Enabled or .Presenter) or `switchable` (the display
 // menu's FRAME GENERATION row: menu/display_rows.h), as a detour on the game's swap chain placed at its first frame's
 // end (off, it passes every present through). False when it cannot be hooked.

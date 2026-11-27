@@ -4,16 +4,19 @@
 // The display menu's rows for the plugin's settings, hooked into the game's unmodified menu (OpenRFG64 VOM has rows of
 // its own in its source: there the plugin adds none). After the game's rows on the general page:
 //   RENDERER          PATH TRACED or STANDARD (the game as it ships): rfgrt.ini's Host.Enabled, from the next start,
-//                     which its caption says; changed from the main menu only (greyed out in game). VOM's row switches
+//                     which its caption says. VOM's row switches
 //                     at once (core/active.h), which takes its seams: the scene mirror keeping a copy of every mesh (too
 //                     much for the 32-bit game's memory), and the patched pixel shaders made beside the originals, the
 //                     other version released with the game's, through VOM's seam in FragmentShader::destroy, which
 //                     rfg.exe inlines into each of its callers.
 //   DLSS              the path tracer's DLSS mode (off, DLAA, quality, balanced, performance, ultra performance): DLSS.Mode.
-//                     With path tracing running and Ray Reconstruction (GI.Denoiser=2) only; in game too, at once.
-//   FRAME GENERATION  DLSS Frame Generation: FrameGeneration.Enabled; in game too, at once, with either renderer: the
-//                     presenter's detour is then placed even when it starts off. Greyed out where no presenter can run
+//                     With path tracing running and Ray Reconstruction (GI.Denoiser=2) only; at once.
+//   FRAME GENERATION  DLSS Frame Generation: FrameGeneration.Enabled; at once, with either renderer: the presenter's
+//                     detour is then placed even when it starts off. Greyed out where no presenter can run
 //                     (presenter::available: the 32-bit plugin without rfgrt_present.exe, a build without Streamline).
+// All three change from the main menu only (greyed out in game), as VOM's do: nothing of frame generation's or of the
+// path tracer's switches under a running level (DLSS and frame generation switched there, 2026-11-27: frame generation
+// read the new size's motion wrongly, and making it again there froze the GPU; present/framegen.cpp).
 // Accept applies them and writes them to rfgrt.ini; back asks before dropping changes, as for the game's own rows (the
 // game's changes_made). The captions and values go into the game's localization table, whose data has none of them.
 struct Config;

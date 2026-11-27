@@ -167,7 +167,7 @@ struct Block {
     // Test.KillHostAtSeconds with the core in the game's process (OpenRFG64-memtest): 1 asks the core to remove its
     // device (ID3D12Device5::RemoveDevice) as a lost device would be; the core sets 2 once it has
     volatile int32_t test_remove_device;
-    // DLSS (DLSS.Mode; OpenRFG64 VOM's DLSS row, also while playing), with GI.Denoiser=2: 0 off (the wavelet filter),
+    // DLSS (DLSS.Mode; OpenRFG64 VOM's DLSS row, at the main menu), with GI.Denoiser=2: 0 off (the wavelet filter),
     // 1 DLAA (the GI's rays at the frame's size), 2 quality, 3 balanced, 4 performance, 5 ultra performance (the rays at
     // NVIDIA's render size for the mode, jittered, upscaled by Ray Reconstruction). The core switches at its next frame,
     // once the frames it has queued are done.

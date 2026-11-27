@@ -139,12 +139,14 @@ bool at_main_menu() {
 
 bool dlss_row_on() { return g_dlss && g_path_traced_now; }
 
+// All three from the main menu only (greyed out in game).
 void update_rows() {
     const int menu = rfg::global<int>(rfg::rva::Menu_handle_doptions);
     auto enable = rfg::fn<EnableFn>(rfg::rva::ui_menu_enable_menu_item);
-    if (g_row_renderer >= 0) enable(menu, g_row_renderer, at_main_menu());
-    if (g_row_dlss >= 0) enable(menu, g_row_dlss, dlss_row_on());
-    if (g_row_fg >= 0) enable(menu, g_row_fg, g_fg);
+    const bool main_menu = at_main_menu();
+    if (g_row_renderer >= 0) enable(menu, g_row_renderer, main_menu);
+    if (g_row_dlss >= 0) enable(menu, g_row_dlss, main_menu && dlss_row_on());
+    if (g_row_fg >= 0) enable(menu, g_row_fg, main_menu && g_fg);
 }
 
 void __cdecl on_renderer(int, void* value) { g_pending.renderer = int(intptr_t(value)) == 1 ? 1 : 0; }
@@ -174,19 +176,19 @@ void save(const wchar_t* section, const wchar_t* key, int value) {
         LOG("display rows: %ls.%ls=%ls written to rfgrt.ini (the environment's %ls wins over it at the next start)", section, key, text, env);
 }
 
-// Accept: the rows' changes applied and written to rfgrt.ini.
+// Accept: the rows' changes applied and written to rfgrt.ini (at the main menu; in game the rows are greyed out).
 void apply() {
     if (!changed()) return;
     const Values before = g_current;
+    if (!at_main_menu()) {
+        LOG("display rows: RENDERER, DLSS and FRAME GENERATION change from the main menu only: kept as they were");
+        g_pending = before;
+        return;
+    }
     if (g_pending.renderer != before.renderer) {
-        if (at_main_menu()) {
-            LOG("display rows: RENDERER %s from the next start (Host.Enabled=%d in rfgrt.ini)", g_pending.renderer ? "PATH TRACED" : "STANDARD",
-                g_pending.renderer);
-            save(L"Host", L"Enabled", g_pending.renderer);
-        } else {
-            LOG("display rows: RENDERER changes from the main menu only: kept %s", before.renderer ? "PATH TRACED" : "STANDARD");
-            g_pending.renderer = before.renderer;
-        }
+        LOG("display rows: RENDERER %s from the next start (Host.Enabled=%d in rfgrt.ini)", g_pending.renderer ? "PATH TRACED" : "STANDARD",
+            g_pending.renderer);
+        save(L"Host", L"Enabled", g_pending.renderer);
     }
     if (g_pending.dlss != before.dlss) {
         g_actions.set_dlss_mode(g_pending.dlss);
@@ -221,7 +223,7 @@ void add_rows() {
     if (!g_told) {
         g_told = true;
         LOG("display rows: the general page has RENDERER (row %d), DLSS (row %d) and FRAME GENERATION (row %d)%s", g_row_renderer,
-            g_row_dlss, g_row_fg, at_main_menu() ? "" : " (in game: RENDERER greyed out)");
+            g_row_dlss, g_row_fg, at_main_menu() ? "" : " (in game: greyed out)");
     }
 }
 
@@ -275,19 +277,21 @@ bool install(const Config& cfg, const std::wstring& ini, bool frame_generation, 
     }
     // back's question (lose the changes?) for ours too; without it back drops them unasked
     const bool asks = rva::changes_made && hooks::create(rva::changes_made, &d_changes_made, &o_changes_made, "changes_made");
-    LOG("display rows: RENDERER (from the next start), DLSS (%s) and FRAME GENERATION (%s) on the display menu's general page%s",
+    LOG("display rows: RENDERER (from the next start), DLSS (%s) and FRAME GENERATION (%s) on the display menu's general page, "
+        "changed from the main menu only%s",
         !g_dlss ? "greyed out: GI.Denoiser is not 2" : g_path_traced_now ? "Ray Reconstruction's modes" : "greyed out: no path tracing",
-        frame_generation ? "switched at once" : "greyed out: no presenter in this plugin", asks ? "" : "; back drops their changes unasked");
+        frame_generation ? "at once" : "greyed out: no presenter in this plugin", asks ? "" : "; back drops their changes unasked");
     return true;
 }
 
 bool rows_shown() { return g_shown; }
 
 void test_choose(int renderer, int dlss, int frame_generation) {
-    // as a player would: only the rows that can change now
-    if (renderer >= 0 && g_row_renderer >= 0 && at_main_menu()) on_renderer(g_row_renderer, reinterpret_cast<void*>(intptr_t(renderer)));
-    if (dlss >= 0 && g_row_dlss >= 0 && dlss_row_on()) on_dlss(g_row_dlss, reinterpret_cast<void*>(intptr_t(dlss)));
-    if (frame_generation >= 0 && g_row_fg >= 0 && g_fg) {
+    // as a player would: only the rows that can change now (at the main menu only)
+    const bool main_menu = at_main_menu();
+    if (renderer >= 0 && g_row_renderer >= 0 && main_menu) on_renderer(g_row_renderer, reinterpret_cast<void*>(intptr_t(renderer)));
+    if (dlss >= 0 && g_row_dlss >= 0 && main_menu && dlss_row_on()) on_dlss(g_row_dlss, reinterpret_cast<void*>(intptr_t(dlss)));
+    if (frame_generation >= 0 && g_row_fg >= 0 && main_menu && g_fg) {
         g_pending_fg = frame_generation != 0;
         on_frame_generation(g_row_fg, nullptr);
     }

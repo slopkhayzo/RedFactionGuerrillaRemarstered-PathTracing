@@ -55,8 +55,7 @@ const char* unavailable();
 // At each present through the presenter's chain (render thread), in order: the frame's start (whether it has inputs:
 // without them for a while, in menus and loading screens, DLSS-G pauses), its inputs (on the presenter's list, copied by
 // Streamline there), the markers around the present.
-// The frame's inputs' sizes too (the frame's, the depth and motion's; 0: none): DLSS-G's buffers are made for them.
-void begin_frame(bool has_inputs, unsigned width = 0, unsigned height = 0, unsigned depth_width = 0, unsigned depth_height = 0);
+void begin_frame(bool has_inputs);
 bool set_inputs(ID3D12GraphicsCommandList* list, const Camera& camera, const Inputs& inputs);
 void before_present();
 void after_present();
